@@ -147,3 +147,10 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Wrangler local secrets
+.dev.vars
+
+# Wrangler local state
+.wrangler/
+wrangler.jsonc

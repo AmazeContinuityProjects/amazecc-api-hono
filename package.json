@@ -1,0 +1,36 @@
+{
+  "name": "amazecc-api-hono",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AmazeCC API — VTOP remote scrapers, services atop remote, and admin routes. Cloudflare Workers + Queues.",
+  "type": "module",
+  "packageManager": "pnpm@12.9.1",
+  "scripts": {
+    "dev": "wrangler dev --port 3100",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20",
+    "cheerio": "^1.2.0",
+    "css-select": "^7.0.0",
+    "domhandler": "^6.0.1",
+    "domutils": "^4.0.2",
+    "hono": "^4.9.16",
+    "htmlparser2": "^12.0.0",
+    "jpeg-js": "^0.4.4",
+    "pg": "^8.21.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251117.0",
+    "@types/jpeg-js": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/pngjs": "^6.0.5",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.143.0"
+  }
+}

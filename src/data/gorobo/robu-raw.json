@@ -1,0 +1,1061 @@
+{
+  "generated_at": "2026-08-25T08:19:11Z",
+  "source": "https://robu.in",
+  "count": 48,
+  "products": [
+    {
+      "id": "672612",
+      "sku": "672612",
+      "name": "Seeed Grove Temp Humidity Pressure Gas Sensor Module",
+      "slug": "grove-temperature-humidity-pressure-and-gas-sensor-bme680",
+      "price": 2369,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/Grove-Temperature-Humidity-Pressure-and-Gas-Sensor-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/Grove-Temperature-Humidity-Pressure-and-Gas-Sensor-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/Grove-Temperature-Humidity-Pressure-and-Gas-Sensor-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/Grove-Temperature-Humidity-Pressure-and-Gas-Sensor-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/Grove-Temperature-Humidity-Pressure-and-Gas-Sensor-4.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "672602",
+      "sku": "672602",
+      "name": "SeeedStudio Grove Piezo Vibration Sensor",
+      "slug": "grove-piezo-vibration-sensor",
+      "price": 659,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/13-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/14-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/15-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/16-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2020/01/17-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Vibration Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "637307",
+      "sku": "637307",
+      "name": "Piezo Vibration Sensor - Small Vertical",
+      "slug": "piezo-vibration-sensor-small-vertical",
+      "price": 1999,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/17-4.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Force and Flex Film Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "637305",
+      "sku": "637305",
+      "name": "Piezo Vibration Sensor - Large",
+      "slug": "piezo-vibration-sensor-large",
+      "price": 1379,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/3-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/image-11.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Force and Flex Film Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "637306",
+      "sku": "637306",
+      "name": "Piezo Vibration Sensor - Small Horizontal",
+      "slug": "piezo-vibration-sensor-small-horizontal",
+      "price": 1899,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/17-5.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Force and Flex Film Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "624757",
+      "sku": "624757",
+      "name": "Benewake TF03-100 UART Long-Range LiDAR Sensor for Drones, Range: 0.1m~100m",
+      "slug": "benewake-tf03-100m-long-distance-laser-lidar-rangefinder-for-drones-uav-uas-robots",
+      "price": 20999,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/Benewake-TF03-180M-Long-Distance-Laser-LidarRangefinder-for-Drones-UAV-UAS-Robots-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/1615529647957.jpeg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/Benewake-TF03-180M-Long-Distance-Laser-LidarRangefinder-for-Drones-UAV-UAS-Robots-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/Benewake-TF03-04-700x467.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "LIDAR Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "618487",
+      "sku": "618487",
+      "name": "DHT11 Temp Humidity Sensor Module with LED Indicator",
+      "slug": "dht11-temperature-and-humidity-sensor-module-with-led",
+      "price": 56,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/DHT11-Temperature-And-Humidity-Sensor-Module-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/DHT11-Temperature-And-Humidity-Sensor-Module-2.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor",
+        "Best Prices"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "618484",
+      "sku": "618484",
+      "name": "DHT11 Temperature & Humidity Sensor Module with Cable",
+      "slug": "dht11-temperature-and-humidity-sensor-module-with-cable",
+      "price": 109,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/DHT11-Temperature-And-Humidity-Sensor-Module-1-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/DHT11-Temperature-And-Humidity-Sensor-Module-2-1.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "618471",
+      "sku": "618471",
+      "name": "Humidity Sensitive Switch Relay Module",
+      "slug": "humidity-sensitive-switch-relay-module",
+      "price": 197,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/Humidity-Sensitive-Switch-Relay-Module-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/Humidity-Sensitive-Switch-Relay-Module-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/Humidity-Sensitive-Switch-Relay-Module-3.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Humidity Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "610750",
+      "sku": "610750",
+      "name": "P45 Small Float Level Control Switch Plastic Float Switch",
+      "slug": "p45-small-float-level-control-switch-plastic-float-switch",
+      "price": 114,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/P45-Small-Float-Level-Control-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/P45-Small-Float-Level-Control-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/P45-Small-Float-Level-Control-3.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Level Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "610757",
+      "sku": "610757",
+      "name": "Side Mounted Small Float Level Control Switch Plastic Float Switch 55mm",
+      "slug": "side-mounted-small-float-level-control-switch-plastic-float-switch-55mm",
+      "price": 112,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Side-Mounted-Small-Float-Level-Control-Switch-Plastic-Float-Switch-55MM.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Level Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "610690",
+      "sku": "610690",
+      "name": "P31 Small Float Level Control Switch Plastic Float Switch",
+      "slug": "p31-small-float-level-control-switch-plastic-float-switch",
+      "price": 106,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/P31-Small-Float-Level-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/P31-Small-Float-Level-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Level Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "610733",
+      "sku": "610733",
+      "name": "P35 Small Float Level Control Switch Plastic Float Switch",
+      "slug": "p35-small-float-level-control-switch-plastic-float-switch",
+      "price": 98,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/P35-Small-Float-Level-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/P35-Small-Float-Level-2.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Level Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "599821",
+      "sku": "599821",
+      "name": "SeeedStudio Grove Infrared Receiver",
+      "slug": "grove-infrared-receiver",
+      "price": 519,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Infrared-Receiver-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Infrared-Receiver-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Infrared-Receiver-5.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "PIR / IR and Optical Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "598801",
+      "sku": "598801",
+      "name": "Seeed Studio Grove DHT11 Temperature & Humidity Sensor",
+      "slug": "grove-temperature-humidity-sensor-dht11",
+      "price": 799,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Temperature-Humidity-Sensor-DHT11.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Temperature-Humidity-Sensor-DHT11-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Temperature-Humidity-Sensor-DHT11-3.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "598684",
+      "sku": "598684",
+      "name": "Seeed Studio Grove Infrared Emitter",
+      "slug": "grove-infrared-emitter",
+      "price": 399,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Infrared-Emitter-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Infrared-Emitter-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Infrared-Emitter-3.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "PIR / IR and Optical Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "598375",
+      "sku": "598375",
+      "name": "SeeedStudio SW-420 Grove Vibration Sensor",
+      "slug": "grove-vibration-sensor-sw-420",
+      "price": 499,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Vibration-Sensor-SW-420-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Vibration-Sensor-SW-420-6.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/Grove-Vibration-Sensor-SW-420-v1.1.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Vibration Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "597041",
+      "sku": "597041",
+      "name": "Seeed Studio Grove Mini PIR Motion Sensor",
+      "slug": "grove-mini-pir-motion-sensor",
+      "price": 709,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/123.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/Grove-Mini-PIR-Motion-Sensor-v1.01-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/10/Grove-Mini-PIR-Motion-Sensor-7.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "PIR / IR and Optical Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "596562",
+      "sku": "596562",
+      "name": "Seeed Studio Grove Rotary Angle Sensor",
+      "slug": "grove-rotary-angle-sensor",
+      "price": 429,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/Grove-Rotary-Angle-Sensor.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/09/Grove-Rotary-Angle-Sensor-1.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Rotary Encoder"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "590640",
+      "sku": "590640",
+      "name": "Seeed Studio Grove Temperature Sensor",
+      "slug": "grove-temperature-sensor",
+      "price": 339,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/12345.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/12/SKU-590640.png",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/09/LR-Grove-Temperature-Sensor.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor",
+        "Temperature Sensor ICs"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "502117",
+      "sku": "502117",
+      "name": "Cooling System Heat Sink Set with FAN DIY Kit for Thermoelectric Peltier Refrigeration (without Peltier Module)",
+      "slug": "thermoelectric-peltier-refrigeration-cooling-system-diy-kit",
+      "price": 389,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/Thermoelectric-Peltier-Refrigeration-Cooling-System-DIY-Kit-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/Thermoelectric-Peltier-Refrigeration-Cooling-System-DIY-Kit-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/Cooling-System-Heat-Sink-Set-with-FAN-DIY-Kit-for-Thermoelectric-Peltier-Refrigeration.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Thermoelectric Peltier Elements",
+        "Best Prices",
+        "Multi-Brand DIY Mini Projects Kits"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "495708",
+      "sku": "495708",
+      "name": "ADH-Tech GT521F52 Optical Fingerprint Scanner Module with JST SH Connector",
+      "slug": "gt521f52-optical-fingerprint-scanner-module-with-jst-sh-connector",
+      "price": 2629,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/SKU-495708.png",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/GT521Fxx-Fingerprint-module-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/GT521Fxx-Fingerprint-module-6.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/GT521Fxx-Fingerprint-module-7.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/GT521Fxx-Fingerprint-module-9.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/Diagram-of-connection.png",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/example.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Fingerprint Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "495690",
+      "sku": "495690",
+      "name": "ADH-Tech GT521F32 Optical Fingerprint Scanner Module with JST SH Connector",
+      "slug": "gt521f32-optical-fingerprint-scanner-module-with-jst-sh-connector",
+      "price": 2329,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/GT521Fxx-Fingerprint-module-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/GT521Fxx-Fingerprint-module-9.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/GT521F32-Optical-Fingerprint-Scanner-Module.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/Diagram-of-connection.png",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/example.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2024/03/495690-1.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Fingerprint Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "488983",
+      "sku": "488983",
+      "name": "GY-63 MS5611-01BA03 High Precision Pressure Sensor Height Sensor Module",
+      "slug": "gy-63-ms5611-01ba03-high-precision-pressure-sensor-height-sensor-module",
+      "price": 509,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/High-Precision-Pressure-Sensor-3-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/High-Precision-Pressure-Sensor-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/High-Precision-Pressure-Sensor-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/High-Precision-Pressure-Sensor-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/High-Precision-Pressure-Sensor-1.jpeg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/07/High-Precision-Pressure-Sensor-2-1.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Load Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "475506",
+      "sku": "475506",
+      "name": "Tekscan FlexiForce A201/1 Flex Sensor",
+      "slug": "flexiforce-a201-sensor",
+      "price": 2429,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/product/475506/FQ9itomFcHHwE4w4N1pknBfQmYUrAqoEIch3AWry.webp",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/FlexiForce-A201-Sensor-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/FlexiForce-A201-Sensor.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Force and Flex Film Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "456157",
+      "sku": "456157",
+      "name": "CO Gas Sensor Alarm Detector with LCD Display",
+      "slug": "co-gas-sensor-detector-carbon-monoxide-poisoning-alarm-detector",
+      "price": 549,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/CO-Gas-Sensor-Detector-Carbon-Monoxide-Poisoning-Alarm-Detector-6.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/CO-Gas-Sensor-Detector-Carbon-Monoxide-Poisoning-Alarm-Detector-7.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/CO-Gas-Sensor-Detector-Carbon-Monoxide-Poisoning-Alarm-Detector-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Gas Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "456140",
+      "sku": "456140",
+      "name": "MICS-5524 CO H2 CH4 Gas Sensor Detection Module",
+      "slug": "mics-5524-carbon-monoxide-hydrogen-methane-alcohol-gas-sensor-detection-module",
+      "price": 1249,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/MICS-5524-Carbon-Monoxide-Hydrogen-Methane-Alcohol-Gas-Sensor-Detection-Module-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/MICS-5524-Carbon-Monoxide-Hydrogen-Methane-Alcohol-Gas-Sensor-Detection-Module-2.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Gas Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "456119",
+      "sku": "456119",
+      "name": "AMG8833 IR 8×8 Thermal Imaging Sensor Module",
+      "slug": "amg8833-ir-88-thermal-imager-array-temperature-sensor-module",
+      "price": 2911,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/AMG8833-IR-88-Thermal-Imager-Array-Temperature-Sensor-Module-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/AMG8833-IR-88-Thermal-Imager-Array-Temperature-Sensor-Module-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/06/AMG8833-IR-88-Thermal-Imager-Array-Temperature-Sensor-Module-3.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor",
+        "Best Prices"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "420926",
+      "sku": "420926",
+      "name": "MMA7361 Angle Acceleration Sensor Module (Replace MMA7260 Acceleration Module)",
+      "slug": "mma7361-angle-acceleration-sensor-module-replace-mma7260-acceleration-module",
+      "price": 659,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MMA7361-Angle-Acceleration-Sensor-Module-1.jpeg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MMA7361-Angle-Acceleration-Sensor-Module-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MMA7361-Angle-Acceleration-Sensor-Module-2.jpeg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MMA7361-Angle-Acceleration-Sensor-Module-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MMA7361-Angle-Acceleration-Sensor-Module-3.jpeg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MMA7361-Angle-Acceleration-Sensor-Module-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MMA7361-Angle-Acceleration-Sensor-Module-4.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "IMU, Accelerometer, Magnetometer and Gyroscope"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "419760",
+      "sku": "419760",
+      "name": "GY-271 QMC5883L 3-axis Electronic Compass Module Magnetic Field Sensor (China Chip)",
+      "slug": "gy-271-hmc5883l-3-axis-electronic-compass-module-magnetic-field-sensor-china-chip",
+      "price": 173,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/02.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/03.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/01.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/GY-271-HMC5883L-3-axis-Electronic-Compass-Module-Magnetic-Field-Sensor-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/10.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "IMU, Accelerometer, Magnetometer and Gyroscope"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "417371",
+      "sku": "417371",
+      "name": "MAX30100 Pulse Oximeter Heart Rate Sensor Module",
+      "slug": "max30100-pulse-oximeter-heart-rate-sensor-module",
+      "price": 85,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MAX30100-Pulse-Oximeter-Heart-Rate-Sensor-Module-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MAX30100-Pulse-Oximeter-Heart-Rate-Sensor-Module-5-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/MAX30100-Pulse-Oximeter-Heart-Rate-Sensor-Module-3-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "ECG EMG and Heart Rate Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "415967",
+      "sku": "415967",
+      "name": "BMP280 Barometric Pressure and Altitude Sensor I2C/SPI Module",
+      "slug": "bmp280-barometric-pressure-and-altitude-sensor-i2c-spi-module",
+      "price": 28,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/BMP280-Barometric-Pressure-and-Altitude-Sensor-I2CSPI-Module-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/BMP280-Barometric-Pressure-and-Altitude-Sensor-I2CSPI-Module-5.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "IMU, Accelerometer, Magnetometer and Gyroscope",
+        "Best Prices"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "399894",
+      "sku": "399894",
+      "name": "HTU21D Temperature & Humidity Sensor Module",
+      "slug": "htu21d-temperature-and-humidity-sensor-module",
+      "price": 155,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/PIC_7955.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/05/PIC_7959.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "366395",
+      "sku": "366395",
+      "name": "HR 202 Humidity Detection Sensor Module",
+      "slug": "hr-202-humidity-detection-sensor-module",
+      "price": 45,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/HR-202-Humidity-Detection-Sensor-Module-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/HR-202-Humidity-Detection-Sensor-Module-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/HR-202-Humidity-Detection-Sensor-Module-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/HR-202-Humidity-Detection-Sensor-Module-6.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/HR-202-Humidity-Detection-Sensor-Module-4.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Humidity Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "362731",
+      "sku": "362731",
+      "name": "Infrared Obstacle Avoidance Sensor Module",
+      "slug": "infrared-obstacle-avoidance-sensor-module",
+      "price": 82,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Infrared-Obstacle-Avoidance-Sensor-Module.png"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "PIR / IR and Optical Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "355146",
+      "sku": "355146",
+      "name": "Optical Liquid Level Sensor",
+      "slug": "optical-liquid-level-sensor",
+      "price": 1009,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Optical-Liquid-Level-Sensor-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Optical-Liquid-Level-Sensor.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Optical-Liquid-Level-Sensor-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Optical-Liquid-Level-Sensor-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Optical-Liquid-Level-Sensor-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Optical-Liquid-Level-Sensor-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/Optical-Liquid-Level-Sensor-6.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Level Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "348038",
+      "sku": "348038",
+      "name": "MG811 CO2 Carbon Dioxide Gas Sensor Module",
+      "slug": "mg811-module-air-carbon-dioxide-co2-sensor",
+      "price": 2099,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/MG811-Module-Air-Carbon-DioxideCO2-Sensor-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/MG811-Module-Air-Carbon-DioxideCO2-Sensor-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Gas Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "347782",
+      "sku": "347782",
+      "name": "AMT1001 Resistive Humidity & Temperature Sensor Module",
+      "slug": "amt1001-resistive-humidity-and-temperature-sensor-module",
+      "price": 197,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-9.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-7.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-8.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-6.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AMT1001-Resistive-Humidity-sensor-5.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "347581",
+      "sku": "347581",
+      "name": "ASAIR AM2301 Capacitive Temperature & Humidity Sensor",
+      "slug": "am2301-capacitive-digital-temperature-humidity-sensor",
+      "price": 359,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AM2301-Capacitive-Digital-Temperature-Humidity-Sensor-1-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AM2301-Capacitive-Digital-Temperature-Humidity-Sensor-6.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AM2301-Capacitive-Digital-Temperature-Humidity-Sensor-7.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/500px-Temperature_Humidity_Sensor_hardware_connect.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AM2301-Capacitive-Digital-Temperature-Humidity-Sensor-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/04/AM2301-Capacitive-Digital-Temperature-Humidity-Sensor-2.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "301983",
+      "sku": "301983",
+      "name": "OE-37 Hall Effect Two Channel Magnetic Encoder",
+      "slug": "oe-37-hall-effect-two-channel-magnetic-encoder",
+      "price": 449,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-37-Hall-Effect-Two-Channel-Magnetic-Encoder-11-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-37-Hall-Effect-Two-Channel-Magnetic-Encoder-10.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-37-Hall-Effect-Two-Channel-Magnetic-Encoder-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-37-Hall-Effect-Two-Channel-Magnetic-Encoder-13.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-37-Hall-Effect-Two-Channel-Magnetic-Encoder-12-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Rotary Encoder"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "302048",
+      "sku": "302048",
+      "name": "OE-775 Hall Effect Two Channel Magnetic Encoder",
+      "slug": "oe-775-hall-effect-two-channel-magnetic-encoder",
+      "price": 399,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-775-Hall-Effect-Two-Channel-Magnetic-Encoder-2-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-775-Hall-Effect-Two-Channel-Magnetic-Encoder-10.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-775-Hall-Effect-Two-Channel-Magnetic-Encoder-8.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-775-Hall-Effect-Two-Channel-Magnetic-Encoder-7.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-775-Hall-Effect-Two-Channel-Magnetic-Encoder-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-775-Hall-Effect-Two-Channel-Magnetic-Encoder-4.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Rotary Encoder"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "300738",
+      "sku": "300738",
+      "name": "OE-28 Hall Effect Two Channel Magnetic Encoder",
+      "slug": "oe-28-hall-effect-two-channel-magnetic-encoder",
+      "price": 449,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-28-Hall-Effect-Two-Channel-Magnetic-Encoder-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/IMG_4593.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/IMG_4586.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/IMG_4634.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-28-Hall-Effect-Two-Channel-Magnetic-Encoder-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-28-Hall-Effect-Two-Channel-Magnetic-Encoder-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/OE-28-Hall-Effect-Two-Channel-Magnetic-Encoder-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/03/Untitled-3.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Rotary Encoder"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "261834",
+      "sku": "261834",
+      "name": "Advance Technologies EMG Muscle Sensor V3.0 With Cable And Electrodes",
+      "slug": "advancer-technologies-emg-muscle-sensor-v3-0-with-cable-and-electrodes",
+      "price": 991,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/02/261834-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/02/261834-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/02/261834-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/02/261834-4.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "ECG EMG and Heart Rate Sensors",
+        "Best Prices"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "232566",
+      "sku": "232566",
+      "name": "Orange 600 PPR ABZ 3-Phase Incremental Magnetic Rotary Encoder",
+      "slug": "orange-600-ppr-abz-3-phase-incremental-magnetic-rotary-encoder",
+      "price": 3379,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/01/Orange-3806-3806-MAGI-600-ABZ-OC-Rotary-Incremental-Magnetic-Encoders-ROBU.IN_.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/01/Orange-Rotary-Incremental-Optical-Encoders-ROBU.IN_.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/01/Orange-Rotary-Incremental-Optical-Encoders-ROBU.IN_-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/01/Orange-Rotary-Incremental-Optical-Encoders-ROBU.IN_-5.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/01/Orange-Rotary-Incremental-Optical-Encoders-ROBU.IN_-3.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/01/Orange-Rotary-Incremental-Optical-Encoders-ROBU.IN_-6.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Rotary Encoder"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "181464",
+      "sku": "181464",
+      "name": "DHT22 AM2302 Digital Temperature & Humidity Sensor",
+      "slug": "dht22-am2302-digital-temperature-humidity-sensor",
+      "price": 129,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/181464-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/DHT22AM2302-Digital-Temperature-Humidity-Sensor-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/DHT22AM2302-Digital-Temperature-Humidity-Sensor-4.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/51-ltbqF3vL._SL1024_.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/DHT22.png",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/DHT22-AM2302.png",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/181464-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "Temperature and Humidity Sensor"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "170838",
+      "sku": "170838",
+      "name": "Benewake TF03 180M Long Distance Laser Lidar/Rangefinder for Drones, (UART) UAV UAS Robots. Range: 0.1m~180m",
+      "slug": "benewake-tf03-180m-long-distance-laser-lidar-rangefinder-for-drones-uav-uas-robots",
+      "price": 26249,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/Benewake-TF03-180M-Long-Distance-Laser-LidarRangefinder-for-Drones-UAV-UAS-Robots-2.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2019/11/1615529647957.jpeg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/Benewake-TF03-180M-Long-Distance-Laser-LidarRangefinder-for-Drones-UAV-UAS-Robots-1.jpg"
+      ],
+      "in_stock": false,
+      "mpn": "",
+      "categories": [
+        "LIDAR Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "170839",
+      "sku": "170839",
+      "name": "Benewake TFMini Plus LiDAR Distance Sensor for Drones Robots IoT ITS Smart Detection (Range: 0.1~12m) UART",
+      "slug": "tfmini-plus-lidar-distance-sensor-for-drones-uav-uas-robots-12m",
+      "price": 4379,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/robu-2-25.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/robu-1-24.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/12/Untitled.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2024/03/170839.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2024/03/170839-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "LIDAR Sensors"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    },
+    {
+      "id": "157027",
+      "sku": "157027",
+      "name": "GY-273 QMC5883L 3-Axis Magnetic Field Sensor",
+      "slug": "gy-273-hmc5883l-3-axis-module-magnetic-field-sensor",
+      "price": 147,
+      "sale_price": null,
+      "moq_price": null,
+      "images": [
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/11/GY-273-HMC5883L-3-Axis-Module-Magnetic-Field-Sensor-3-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/11/GY-273-HMC5883L-3-Axis-Module-Magnetic-Field-Sensor-2-1.jpg",
+        "https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2018/11/GY-273-HMC5883L-3-Axis-Module-Magnetic-Field-Sensor-1-1.jpg"
+      ],
+      "in_stock": true,
+      "mpn": "",
+      "categories": [
+        "IMU, Accelerometer, Magnetometer and Gyroscope"
+      ],
+      "is_backorder": false,
+      "_category_slug": "sensor-modules"
+    }
+  ]
+}

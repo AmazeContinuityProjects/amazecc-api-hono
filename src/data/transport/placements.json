@@ -1,0 +1,554 @@
+{
+  "placements": [
+    {
+      "routeNumber": "30",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "31",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "32",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "33",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "34",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "35",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "36",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "37",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "38",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "39",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "40",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "41",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "42",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "43",
+      "dispersalTime": "5PM",
+      "zone": "CLOCK COURT - AAVIN ROAD"
+    },
+    {
+      "routeNumber": "44",
+      "dispersalTime": "5PM",
+      "zone": "B BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "45",
+      "dispersalTime": "5PM",
+      "zone": "B BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "46",
+      "dispersalTime": "5PM",
+      "zone": "B BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "47",
+      "dispersalTime": "5PM",
+      "zone": "B BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "48",
+      "dispersalTime": "5PM",
+      "zone": "B BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "49",
+      "dispersalTime": "5PM",
+      "zone": "B BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "50",
+      "dispersalTime": "5PM",
+      "zone": "C BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "51",
+      "dispersalTime": "5PM",
+      "zone": "C BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "52",
+      "dispersalTime": "5PM",
+      "zone": "C BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "53",
+      "dispersalTime": "5PM",
+      "zone": "C BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "54",
+      "dispersalTime": "5PM",
+      "zone": "C BLOCK HOSTEL ROAD"
+    },
+    {
+      "routeNumber": "55",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "56",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "57",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "58",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "59",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "60",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "61",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "62",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "63",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "64",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "65",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "66",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "67",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "68",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "69",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "70",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "71",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "72",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "73",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "74",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "75",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "76",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "77",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "78",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "79",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "80",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "81",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "82",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "83",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "84",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "85",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "86",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "87",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "88",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "89",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "90",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "91",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "92",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "93",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "94",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "95",
+      "dispersalTime": "5PM",
+      "zone": "AB3 BACKSIDE INDIAN BANK ROAD"
+    },
+    {
+      "routeNumber": "1",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "2",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "3",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "4",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "5",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "6",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "7",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "8",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "9",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "10",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "11",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "12",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "13",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "14",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "15",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "16",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "17",
+      "dispersalTime": "5PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "18",
+      "dispersalTime": "5PM",
+      "zone": "FROM MGR STATUE TO GATE 1 ROAD"
+    },
+    {
+      "routeNumber": "19",
+      "dispersalTime": "5PM",
+      "zone": "FROM MGR STATUE TO GATE 1 ROAD"
+    },
+    {
+      "routeNumber": "20",
+      "dispersalTime": "5PM",
+      "zone": "FROM MGR STATUE TO GATE 1 ROAD"
+    },
+    {
+      "routeNumber": "21",
+      "dispersalTime": "5PM",
+      "zone": "FROM MGR STATUE TO GATE 1 ROAD"
+    },
+    {
+      "routeNumber": "22",
+      "dispersalTime": "5PM",
+      "zone": "FROM MGR STATUE TO GATE 1 ROAD"
+    },
+    {
+      "routeNumber": "23",
+      "dispersalTime": "5PM",
+      "zone": "FROM MGR STATUE TO GATE 1 ROAD"
+    },
+    {
+      "routeNumber": "24",
+      "dispersalTime": "5PM",
+      "zone": "FROM MGR STATUE TO GATE 1 ROAD"
+    },
+    {
+      "routeNumber": "25",
+      "dispersalTime": "5PM",
+      "zone": "NEAR STUDENTS PARKING LOT 1 ROAD"
+    },
+    {
+      "routeNumber": "26",
+      "dispersalTime": "5PM",
+      "zone": "NEAR STUDENTS PARKING LOT 1 ROAD"
+    },
+    {
+      "routeNumber": "27",
+      "dispersalTime": "5PM",
+      "zone": "NEAR STUDENTS PARKING LOT 1 ROAD"
+    },
+    {
+      "routeNumber": "28",
+      "dispersalTime": "5PM",
+      "zone": "NEAR STUDENTS PARKING LOT 1 ROAD"
+    },
+    {
+      "routeNumber": "29",
+      "dispersalTime": "5PM",
+      "zone": "NEAR STUDENTS PARKING LOT 1 ROAD"
+    },
+    {
+      "routeNumber": "96",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "97",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "98",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "99",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "100",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "101",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "102",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "103",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "104",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "105",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "106",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "107",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "108",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "109",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    },
+    {
+      "routeNumber": "110",
+      "dispersalTime": "6PM",
+      "zone": "FROM GATE 2 TO MGR STATUE ROAD"
+    }
+  ]
+}
