@@ -8,14 +8,9 @@
 import { Hono } from "hono";
 import { attemptVtopLogin, parseDashboardIdentity } from "../../lib/vtopLogin";
 import { checkRateLimit, rateLimitResponse, getClientIp } from "../../lib/rateLimit";
-import { getDbPool } from "../../lib/db";
-import { signClubToken } from "../../lib/clubAuth";
 import { syncClubsFromVtop, type ClubsSyncJob } from "../../lib/syncClubs";
-import { withDeadline } from "../../lib/vtop";
 
 export const loginRoute = new Hono();
-
-const DB_LOOKUP_BUDGET_MS = 5_000;
 
 loginRoute.post("/login", async (c) => {
   const ip = getClientIp(c.req.raw);
@@ -57,41 +52,12 @@ loginRoute.post("/login", async (c) => {
       console.error("[login] clubs-sync enqueue failed:", queueErr);
     }
 
-    // Is this user a club representative? (DB read; short budget, non-fatal.)
-    let clubToken: string | undefined;
-    let clubRoles: Array<{ club_id: string; role: string }> = [];
-    try {
-      const pool = getDbPool();
-      const { rows } = await withDeadline(
-        pool.query("SELECT club_id, role FROM club_representatives WHERE vtop_id = $1", [authorizedID]),
-        DB_LOOKUP_BUDGET_MS,
-        `club_representatives lookup exceeded ${DB_LOOKUP_BUDGET_MS}ms`
-      );
-
-      if (rows.length > 0) {
-        const roleMap = new Map<string, { club_id: string; role: string }>();
-        for (const r of rows) {
-          if (!r.club_id) continue;
-          const existing = roleMap.get(r.club_id);
-          if (!existing || r.role === "super-club-rep") {
-            roleMap.set(r.club_id, r);
-          }
-        }
-        clubRoles = Array.from(roleMap.values());
-        clubToken = await signClubToken(authorizedID, clubRoles);
-      }
-    } catch (dbErr) {
-      console.error("Failed to fetch club roles for login:", dbErr);
-    }
-
     return Response.json({
       success: true,
       message: "Login successful!",
       cookies: allCookies,
       csrf: new_csrf,
       authorizedID,
-      clubToken,
-      clubRoles,
     });
   } catch (err: unknown) {
     console.error(err);

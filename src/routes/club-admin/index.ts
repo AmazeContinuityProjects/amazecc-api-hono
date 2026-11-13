@@ -1,7 +1,7 @@
 /**
- * /api/club-admin/* - club representative surface (ported from the Next.js API).
- * Auth: club HMAC bearer tokens minted at /api/login (Amaze ID supersedes this
- * in a later phase; club roles come from the club_representatives table).
+ * /api/club-admin/* - club representative surface. Identity is Amaze ID
+ * (shared D1 with auth.amazecc.com); a club rep is a VTOP-linked Amaze ID
+ * with rows in club_representatives. No HMAC club tokens.
  */
 import { Hono } from "hono";
 import * as reps from "./reps";
@@ -9,8 +9,11 @@ import * as details from "./details";
 import * as feed from "./feed";
 import * as feedPromote from "./feed-promote";
 import * as landingPage from "./landing-page";
+import * as myClubs from "./my-clubs";
 
 export const clubAdminRouter = new Hono();
+
+clubAdminRouter.get("/my-clubs", (c) => myClubs.GET(c.req.raw));
 
 clubAdminRouter.get("/reps", (c) => reps.GET(c.req.raw));
 clubAdminRouter.post("/reps", (c) => reps.POST(c.req.raw));
