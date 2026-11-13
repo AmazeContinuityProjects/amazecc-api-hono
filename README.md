@@ -11,6 +11,45 @@ Lineage: ported from [`../amazecc-api`](../amazecc-api). The **VTOP scrapers →
 
 ---
 
+## Access control (RBAC)
+
+Identity is **Amaze ID** (`auth.amazecc.com`); this worker shares its D1 database (`AUTH_DB`), so authorization is one indexed query per admin request — no token signing round-trip, instant revocation.
+
+| Role | Access |
+|---|---|
+| `superadmin` | Every section; manages admins at `/api/admin/users*` |
+| `admin` | Only the sections in the user's `permissions` field (comma-separated, stored in D1) |
+| `user` | No admin surface |
+
+Section keys (`src/lib/permissions.ts`): `dashboard`, `qbank`, `buses`, `transport`, `gorobo`, `clubs`, `cabshare`, `fresher-resources`, `faculty-directories`, `push`, `settings`, `storage`, `users`, `ocr`, `migrate`, `audit-logs`.
+
+`/api/admin/users*` and `/api/admin/migrate` are superadmin-only. Every other `/api/admin/*` and `/api/qbank/admin/*` route is section-gated. `/api/club-admin/*` stays on the VTOP-linked club token until the club flow migrates.
+
+To create/promote an admin: they sign up at `auth.amazecc.com/sign-up`, then a superadmin:
+
+```sh
+curl -X POST https://hono.amazecc.com/api/admin/users \
+  -H "Authorization: Bearer <your Amaze ID session token>" \
+  -H "content-type: application/json" \
+  -d '{"email":"them@vit.ac.in","role":"admin","permissions":["qbank"]}'
+```
+
+## QBank storage
+
+`/api/qbank/import-to-storage` and `/api/qbank/papers/download/*` use a **native R2 binding** (`PAPERS_BUCKET`, preferred) or S3-compatible `B2_*` credentials as fallback. Until one is configured they answer `503 storage not configured` (by design — the failure is explicit, not silent). To enable R2:
+
+1. Cloudflare Dashboard → R2 → Enable, create bucket (e.g. `amazecc-qbank`)
+2. `wrangler.jsonc`: add `"r2_buckets": [{ "binding": "PAPERS_BUCKET", "bucket_name": "amazecc-qbank" }]`
+3. `wrangler deploy`
+
+No keys are needed for the native binding.
+
+## Environment
+
+See `.env.example` — account/zone, bindings (D1, Hyperdrive, queue), and the secrets you must track. `.env` (gitignored) holds local dev values; production bindings live in `wrangler.jsonc` + `wrangler secret put`.
+
+---
+
 ## Layout
 
 ```
