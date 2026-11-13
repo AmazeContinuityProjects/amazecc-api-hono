@@ -23,10 +23,10 @@ export function parseTimetableHtml(html: string): courseItem[] {
         const rows = selectAll("tr", table);
         for (const row of rows) {
             const cells = getCells(row);
-            if (cells.length === 0) continue;
+            const courseCell = textOf(cells[2]);
+            if (cells.length < 9 || !courseCell) continue;
 
             const slotVenueCell = textOf(cells[7]);
-            const courseCell = textOf(cells[2]);
             const isLab = slotVenueCell.startsWith("L");
             const courseCodeBase = courseCell.split(" ")[0] || "";
 

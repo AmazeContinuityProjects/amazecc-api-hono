@@ -1,52 +1,104 @@
+/**
+ * Hyperdrive-aware database access.
+ *
+ * IMPORTANT (Cloudflare Hyperdrive + node-postgres): do NOT use a global
+ * `pg.Pool` here. Hyperdrive pools origin connections for you; keeping a
+ * module-scope Pool lets Workers hold stale sockets across isolate reuse,
+ * which stalls queries until the driver's connection timeout fires
+ * (observed as ~60+ s requests that end canceled). The documented pattern is
+ * a NEW `Client` per unit of work (per query / per HTTP request).
+ *
+ * This module keeps the call sites simple and byte-compatible:
+ *   const pool = getDbPool();
+ *   const { rows } = await pool.query(sql, params);
+ *   const client = await pool.connect();   // pins one connection (transaction)
+ *   await client.query("BEGIN");
+ *   …
+ *   client.release();                       // ends the client connection
+ */
 import pg from "pg";
+import type { QueryResultRow } from "pg";
 import { getWorkerEnv } from "../env";
 
-let pool: pg.Pool | undefined;
-
-/**
- * One shared pool. On Workers, Hyperdrive terminates TCP at the edge and the
- * `pg` driver talks to the Hyperdrive origin over Workers-native sockets
- * (`nodejs_compat`). Locally, DATABASE_URL is used directly (e.g. a Supabase
- * pooler or a local Postgres).
- *
- * Pool size stays tiny (5) for the same reason as the original serverless
- * setup: don't exhaust the upstream pooler.
- */
-function createPool(): pg.Pool {
+function connectionString(): string {
   const env = getWorkerEnv();
-  const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
-  if (!connectionString) {
+  const value = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+  if (!value) {
     throw new Error(
       "No database connection configured. Bind HYPERDRIVE (production) or set DATABASE_URL (local dev)."
     );
   }
-
-  const p = new pg.Pool({
-    connectionString,
-    // Hyperdrive connections are short-lived; keep the pool tiny.
-    max: parseInt(env.PG_POOL_MAX || "5", 10),
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 10_000,
-  });
-
-  p.on("error", (err: unknown) => {
-    console.error("[db] Unexpected pool error:", err);
-  });
-
-  return p;
+  return value;
 }
 
-export function getDbPool(): pg.Pool {
-  if (!pool) {
-    pool = createPool();
+/** One-shot client wrapper. opens lazily, ends explicitly. */
+class WorkerClient {
+  private client: pg.Client | null = null;
+
+  private async ensure(): Promise<pg.Client> {
+    if (!this.client) {
+      const c = new pg.Client({ connectionString: connectionString() });
+      await c.connect();
+      this.client = c;
+    }
+    return this.client;
   }
-  return pool;
+
+  /** Open the connection eagerly (used by connect() to pin one connection). */
+  async open(): Promise<void> {
+    await this.ensure();
+  }
+
+  async query<T extends QueryResultRow = any>(text: string, values?: unknown[]): Promise<pg.QueryResult<T>> {
+    const client = await this.ensure();
+    return client.query<T>(text, values);
+  }
+
+  async end(): Promise<void> {
+    const c = this.client;
+    this.client = null;
+    if (c) {
+      await c.end().catch(() => {});
+    }
+  }
 }
 
-/** Testing helper: drop the cached pool (e.g. after credentials rotate). */
+export interface Queryable {
+  query<T extends QueryResultRow = any>(text: string, values?: unknown[]): Promise<pg.QueryResult<T>>;
+  connect(): Promise<DbClient>;
+}
+
+export interface DbClient {
+  query<T extends QueryResultRow = any>(text: string, values?: unknown[]): Promise<pg.QueryResult<T>>;
+  release(): Promise<void>;
+}
+
+export function getDbPool(): Queryable {
+  return {
+    async query(text, values) {
+      const client = new WorkerClient();
+      try {
+        return await client.query(text, values);
+      } finally {
+        await client.end();
+      }
+    },
+
+    async connect() {
+      const client = new WorkerClient();
+      // Pin one connection for the whole multi-statement transaction.
+      await client.open();
+      return {
+        query: (text: string, values?: unknown[]) => client.query(text, values),
+        release: () => client.end(),
+      };
+    },
+  };
+}
+
+/** Testing helper kept for API compatibility (no-op now). */
 export function resetDbPool(): void {
-  pool?.end().catch(() => {});
-  pool = undefined;
+  // Each query opens and closes its own client; nothing to reset.
 }
 
 // Helper for route handlers to map low-level pg errors to user-facing HTTP status

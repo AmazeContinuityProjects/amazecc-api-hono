@@ -1,6 +1,6 @@
 import type { GoroboOrderLine } from "./schema";
 import type { Quote } from "./quote";
-import type { Pool } from "pg";
+import type { Queryable } from "../db";
 
 export interface GoroboOrderRow {
   id: string;
@@ -88,7 +88,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * (0-10 hard cap), GST %, shipment cost and notes. Resolves inventory lines
  * against the live catalog to snapshot basePrice/margin.
  */
-export async function parseQuoteBody(body: unknown, pool: Pool): Promise<ParsedQuoteBody> {
+export async function parseQuoteBody(body: unknown, pool: Queryable): Promise<ParsedQuoteBody> {
   const bodyRecord = body as Record<string, unknown>;
   const rawLines = Array.isArray(bodyRecord?.items) ? (bodyRecord.items as unknown[]) : null;
   if (!rawLines || rawLines.length === 0 || rawLines.length > 100) {

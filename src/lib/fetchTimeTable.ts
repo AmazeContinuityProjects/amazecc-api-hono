@@ -32,14 +32,15 @@ export default async function fetchTimetable(
       .find("tbody tr")
       .each((_, row) => {
         const cells = $$$(row).find("td");
-        if (cells.length === 0) return;
+        const courseCell = $$$(cells[2]).text().trim();
+        if (cells.length < 9 || !courseCell) return;
 
         courseInfo.push({
           slNo: $$$(cells[0]).text().trim(),
-          course: $$$(cells[2]).text().trim(),
+          course: courseCell,
           courseCode: $$$(cells[7]).text().trim().startsWith("L")
-            ? $$$(cells[2]).text().trim().split(" ")[0] + "(L)"
-            : $$$(cells[2]).text().trim().split(" ")[0] + "(T)",
+            ? courseCell.split(" ")[0] + "(L)"
+            : courseCell.split(" ")[0] + "(T)",
           LTPJC: $$$(cells[3]).text().trim(),
           category: $$$(cells[4]).text().trim(),
           classId: $$$(cells[6]).text().trim(),

@@ -11,8 +11,13 @@
 export interface WorkerEnv {
   /** Hyperdrive binding (production). Falls back to DATABASE_URL when absent. */
   HYPERDRIVE?: Hyperdrive;
-  /** Direct connection string — local dev only. */
+  /** Direct connection string - local dev only. */
   DATABASE_URL?: string;
+  /**
+   * Shared amazecc-auth D1 database. Amaze ID users/sessions are looked up
+   * here; there is no per-service identity store.
+   */
+  AUTH_DB?: D1Database;
   ADMIN_SECRET?: string;
   ID_SALT?: string;
   ADMIN_VTOP_IDS?: string;

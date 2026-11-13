@@ -135,13 +135,32 @@ Current registry (`src/lib/services.ts`): `marks-stats`.
 
 ---
 
-## Deploy
+## Hyperdrive + Supabase (learned the hard way)
+
+For Supabase, create the Hyperdrive against the **direct** connection host
+(`db.<project-ref>.supabase.co:5432`, user `postgres`), **not** the
+transaction pooler (`aws-N-<region>.pooler.supabase.com:6543`). Queries routed
+through the pooler via Hyperdrive **never return and never error** — the
+connection handshakes fine (~20 ms) and the query bytes are never relayed back
+(observed as requests that time out at 25–125 s with zero worker logs). The
+`postgres.<ref>` pooler user format is additionally pooler-only and is not
+valid on the direct host.
+
+## Production state (deployed)
+
+- **Worker**: `https://amazecc-api-hono.sugeethjayaraj2007.workers.dev` — all routes live
+- **Hyperdrive** `amazecc-db-direct` → `db.<project-ref>.supabase.co:5432` — serving real queries
+  (e.g. `faculty/schools` ~600 ms)
+- **Queues**: `amazecc-sync` + consumer + `amazecc-sync-dlq`
+- **Secrets**: ADMIN_SECRET · ID_SALT · ADMIN_VTOP_IDS · VAPID keys (all pushed)
+- **Verified end-to-end**: VTOP login/captcha from the edge ✓, admin auth + real DB counts ✓,
+  enroll + remote routes ✓, 401 sweeps ✓
 
 ```bash
 pnpm install
 wrangler queues create amazecc-sync
 wrangler queues create amazecc-sync-dlq
-wrangler hyperdrive create amazecc-db --connection-string="postgresql://…sslmode=require"
+wrangler hyperdrive create amazecc-db-direct --connection-string="postgresql://postgres:…@db.<project-ref>.supabase.co:5432/postgres"
 #   → paste the id into wrangler.jsonc "hyperdrive"
 wrangler secret put ADMIN_SECRET          # required (≠ ID_SALT)
 wrangler secret put ID_SALT               # required

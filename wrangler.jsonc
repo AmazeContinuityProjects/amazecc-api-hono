@@ -1,0 +1,81 @@
+/**
+ * AmazeCC API - Cloudflare Workers config
+ *
+ * Production:
+ *   https://hono.amazecc.com  (custom domain, this account's amazecc.com zone)
+ *   https://amazecc-api-hono.sugeethjayaraj2007.workers.dev (workers.dev)
+ *
+ * Bindings:
+ *   env.AUTH_DB    -> D1 "amazecc-auth" (SHARED with auth.amazecc.com)
+ *                     Amaze ID users/sessions are looked up here.
+ *   env.HYPERDRIVE -> Hyperdrive "amazecc-db-direct"
+ *                     origin db.<project-ref>.supabase.co:5432 (user `postgres`)
+ *                     NOTE: the Supabase transaction pooler
+ *                     (aws-1-ap-northeast-2.pooler.supabase.com:6543)
+ *                     silently hangs every query routed through
+ *                     Hyperdrive - use the direct host.
+ *   env.SYNC_QUEUE -> queue "amazecc-sync" (producer + consumer, DLQ amazecc-sync-dlq)
+ *
+ * Secrets (already pushed): ADMIN_SECRET, ID_SALT, ADMIN_VTOP_IDS,
+ *   NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
+ *
+ * Auth migration (2026-11-13): /api/admin/* now requires an Amaze ID session
+ * token (auth.amazecc.com) with role=admin in the shared D1. The legacy HMAC
+ * admin login (/api/admin/auth) is removed. Emergency rollback: `wrangler rollback`.
+ *
+ * Local dev: set DATABASE_URL (or CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
+ * to a reachable local Postgres). Without a reachable DB, DB-backed routes fail
+ * fast locally (scraping routes work fine). The local D1 mirror holds the same
+ * schema as production; seed a local admin with
+ *   wrangler d1 execute amazecc-auth --local --file ../amazecc-auth/migrations/0001_init.sql
+ *
+ * Re-deploy:   pnpm exec wrangler deploy
+ * Tail logs:   pnpm exec wrangler tail amazecc-api-hono
+ */
+{
+  "name": "amazecc-api-hono",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "5abd6d7c8175ba56c3058e34db158aa8",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "hono.amazecc.com",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "AUTH_DB",
+      "database_name": "amazecc-auth",
+      "database_id": "8c4535b4-da9a-416e-8151-0d09db6ff9c6"
+    }
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "5dfc99cf90dc4fa0b438abe9801737b0",
+      // Local dev (wrangler dev) - point this at YOUR local Postgres, or set
+      // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE instead.
+      "localConnectionString": "postgresql://postgres:postgres@localhost:5432/postgres"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "SYNC_QUEUE", "queue": "amazecc-sync" }
+    ],
+    "consumers": [
+      {
+        "queue": "amazecc-sync",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "amazecc-sync-dlq"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

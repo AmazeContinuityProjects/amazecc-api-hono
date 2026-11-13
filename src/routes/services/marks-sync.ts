@@ -19,7 +19,7 @@ import {
   type Contribution,
   type ContributionOutcome,
 } from "../../lib/marksStats";
-import type { PoolClient } from "pg";
+import type { DbClient } from "../../lib/db";
 
 export const marksSyncRoute = new Hono();
 
@@ -128,7 +128,7 @@ marksSyncRoute.post("/marks/sync", async (c) => {
     await ensureSchema();
 
     const pool = getDbPool();
-    const db: PoolClient = await pool.connect();
+    const db: DbClient = await pool.connect();
     const tally: Record<ContributionOutcome, number> = {
       added: 0,
       replaced: 0,

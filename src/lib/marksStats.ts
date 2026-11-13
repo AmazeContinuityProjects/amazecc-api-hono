@@ -1,5 +1,5 @@
 import { sha256Hex } from "./crypto";
-import type { PoolClient } from "pg";
+import type { DbClient } from "./db";
 import { getDbPool } from "./db";
 import { maskUserID } from "./mask";
 /**
@@ -198,7 +198,7 @@ const sha256hex = sha256Hex;
  * (class, assessment); after that the token exists and this never runs again.
  */
 async function hasLegacyContribution(
-  client: PoolClient,
+  client: DbClient,
   classId: string,
   authorizedID: string
 ): Promise<boolean> {
@@ -269,7 +269,7 @@ export type Contribution = {
  * to a plain `add`; their ghost persists, bounded and documented, until term rollover.
  */
 export async function recordContribution(
-  client: PoolClient,
+  client: DbClient,
   ownerKey: string,
   c: Contribution,
   now: number,

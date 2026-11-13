@@ -1,44 +1,41 @@
 /**
- * HMAC bearer tokens for admin and service callers.
+ * Worker auth composition.
  *
- * Token format is byte-compatible with the previous implementation so existing
- * admin sessions stay valid after the migration:
+ * Amaze ID (auth.amazecc.com) is the unified identity. Admin routes verify the
+ * caller's better-auth session token against the SHARED amazecc-auth D1
+ * database (AUTH_DB) — one indexed query, revocation is immediate. There is
+ * no HMAC fallback: emergency rollback is `wrangler rollback` to the previous
+ * worker version.
  *
- *   token   = base64(JSON payload) "." hex(HMAC-SHA256(payload, derivedKey))
- *   derivedKey = HMAC-SHA256(ADMIN_SECRET, "amazecc-token:<typ>")
- *
- * Each token type signs with its own derived key, so a club/service token is
- * never accepted as an admin token and vice versa.
+ * Service tokens (`typ: "service"`, 24 h TTL) are unchanged — they are minted
+ * after a VTOP-verified login for the /api/services/* enrollment flow and are
+ * independent of Amaze ID.
  */
 import { getWorkerEnv } from "../env";
-import { getDbPool } from "./db";
 import { hmacSha256Hex, base64ToString, stringToBase64, timingSafeEqualStr } from "./crypto";
+import {
+  SUPERADMIN_PERMISSIONS,
+  adminUnauthorized,
+  getBearerToken,
+  hasAdminPermission,
+  requireAdminAuth,
+  verifyAmazeSession,
+  type AdminGrant,
+  type AmazeIdIdentity,
+} from "./amazeId";
 
-export const SUPERADMIN_PERMISSIONS = [
-  "dashboard",
-  "qbank",
-  "buses",
-  "push",
-  "fresher-resources",
-  "faculty-directories",
-  "faculty-directory",
-  "users",
-  "transport",
-  "gorobo",
-];
+export {
+  SUPERADMIN_PERMISSIONS,
+  adminUnauthorized,
+  getBearerToken,
+  hasAdminPermission,
+  requireAdminAuth,
+  verifyAmazeSession,
+};
+export type { AdminGrant, AmazeIdIdentity };
 
-const ADMIN_TYPE = "admin";
 const SERVICE_TYPE = "service";
-const SERVICE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h — re-minted on enroll
-const ADMIN_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-
-export interface AdminTokenPayload {
-  typ: typeof ADMIN_TYPE;
-  username: string;
-  role: "superadmin" | "admin";
-  permissions: string[];
-  exp: number;
-}
+const SERVICE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h - re-minted on enroll
 
 export interface ServiceTokenPayload {
   typ: typeof SERVICE_TYPE;
@@ -55,10 +52,6 @@ function getSecret(): string {
   return secret;
 }
 
-async function derivedKey(purpose: string): Promise<Uint8Array> {
-  return new Uint8Array(await hmacRaw(getSecret(), `amazecc-token:${purpose}`));
-}
-
 async function hmacRaw(secret: string, message: string): Promise<ArrayBuffer> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -72,7 +65,7 @@ async function hmacRaw(secret: string, message: string): Promise<ArrayBuffer> {
 
 async function signPayload(payload: Record<string, unknown>, purpose: string): Promise<string> {
   const payloadStr = stringToBase64(JSON.stringify(payload));
-  const key = await derivedKey(purpose);
+  const key = new Uint8Array(await hmacRaw(getSecret(), `amazecc-token:${purpose}`));
   const signature = await hmacSha256Hex(key, payloadStr);
   return `${payloadStr}.${signature}`;
 }
@@ -85,38 +78,18 @@ async function verifyPayload<T extends { typ: string; exp: number }>(
     const parts = token.split(".");
     if (parts.length !== 2) return null;
     const [payloadStr, signature] = parts;
-
-    const key = await derivedKey(purpose);
+    const key = new Uint8Array(await hmacRaw(getSecret(), `amazecc-token:${purpose}`));
     const expected = await hmacSha256Hex(key, payloadStr!);
     if (!timingSafeEqualStr(signature!, expected)) return null;
-
     const raw = base64ToString(payloadStr!);
     if (!raw) return null;
     const payload = JSON.parse(raw) as T;
-
     if (payload.typ !== purpose) return null;
     if (typeof payload.exp !== "number" || Date.now() > payload.exp) return null;
     return payload;
   } catch {
     return null;
   }
-}
-
-/* ── admin tokens ───────────────────────────────────────────────────────── */
-
-export function signAdminToken(
-  username: string,
-  role: "superadmin" | "admin" = "superadmin",
-  permissions: string[] = SUPERADMIN_PERMISSIONS
-): Promise<string> {
-  return signPayload(
-    { typ: ADMIN_TYPE, username, role, permissions, exp: Date.now() + ADMIN_TOKEN_TTL_MS },
-    ADMIN_TYPE
-  );
-}
-
-export function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
-  return verifyPayload<AdminTokenPayload>(token, ADMIN_TYPE);
 }
 
 /* ── service tokens (unified /api/services/* enrollment) ─────────────────── */
@@ -129,35 +102,10 @@ export function verifyServiceToken(token: string): Promise<ServiceTokenPayload |
   return verifyPayload<ServiceTokenPayload>(token, SERVICE_TYPE);
 }
 
-/* ── request helpers ─────────────────────────────────────────────────────── */
-
-export function getBearerToken(req: Request): string | null {
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  return null;
-}
-
-export async function verifyAdminFromRequest(req: Request): Promise<AdminTokenPayload | null> {
-  const token = getBearerToken(req);
-  if (!token) return null;
-  return verifyAdminToken(token);
-}
-
 export async function verifyServiceFromRequest(req: Request): Promise<ServiceTokenPayload | null> {
   const token = getBearerToken(req);
   if (!token) return null;
   return verifyServiceToken(token);
-}
-
-export interface AdminGrant {
-  username: string;
-  role: "superadmin" | "admin";
-  permissions: string[];
-}
-
-/** 401 response for admin routes. */
-export function adminUnauthorized(): Response {
-  return Response.json({ success: false, message: "Unauthorized" }, { status: 401 });
 }
 
 /** 401 response for service routes. */
@@ -166,66 +114,4 @@ export function serviceUnauthorized(): Response {
     { success: false, error: "unauthorized", message: "Missing or invalid service credentials." },
     { status: 401 }
   );
-}
-
-/**
- * Verifies the admin token AND re-reads the grant from the DB on every request
- * (env superadmins stay valid without the DB; everyone else fails closed).
- */
-export async function requireAdminAuth(req: Request): Promise<AdminGrant | Response> {
-  const payload = await verifyAdminFromRequest(req);
-  if (!payload) return adminUnauthorized();
-  const current = await currentAdminGrant(payload.username);
-  if (!current) return adminUnauthorized();
-  return { username: payload.username, ...current };
-}
-
-/**
- * Tokens are valid for 7 days, so the signature alone can't reflect a
- * deactivation or a permission change made after login. Re-read the grant on
- * every admin request (admin traffic is tiny). Env superadmins (ADMIN_VTOP_IDS)
- * stay valid without the DB, matching /api/admin/auth; everyone else fails
- * closed if the row is missing, inactive, or the DB can't be reached.
- */
-async function currentAdminGrant(
-  username: string
-): Promise<{ role: "superadmin" | "admin"; permissions: string[] } | null> {
-  const normalized = String(username || "").toUpperCase().trim();
-  const envSuperadmins = (getWorkerEnv().ADMIN_VTOP_IDS || "")
-    .split(",")
-    .map((id) => id.trim().toUpperCase())
-    .filter(Boolean);
-  if (envSuperadmins.includes(normalized)) {
-    return { role: "superadmin", permissions: SUPERADMIN_PERMISSIONS };
-  }
-  try {
-    const { rows } = await getDbPool().query(
-      "SELECT role, permissions, is_active FROM admin_users WHERE username = $1",
-      [normalized]
-    );
-    const row = rows[0];
-    if (!row || !row.is_active) return null;
-    const perms = Array.isArray(row.permissions)
-      ? row.permissions
-      : typeof row.permissions === "string"
-        ? JSON.parse(row.permissions)
-        : [];
-    return { role: row.role === "superadmin" ? "superadmin" : "admin", permissions: perms };
-  } catch (err) {
-    console.error("[auth] admin grant lookup failed:", err);
-    return null;
-  }
-}
-
-/**
- * Helper to check if an authenticated admin user has one or more required permissions.
- * Superadmins always bypass permission checks.
- */
-export function hasAdminPermission(
-  admin: { role: "superadmin" | "admin"; permissions: string[] },
-  required: string | string[]
-): boolean {
-  if (admin.role === "superadmin") return true;
-  const perms = Array.isArray(required) ? required : [required];
-  return perms.some((p) => admin.permissions?.includes(p));
 }

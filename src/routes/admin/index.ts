@@ -1,11 +1,10 @@
 /**
- * /api/admin/* — admin-only surface. Everything here requires an HMAC bearer
- * token issued by /api/admin/auth (re-checked against env + DB on every
- * request) or a gorobo/admin permission where applicable.
+ * /api/admin/* - admin-only surface. Everything here requires an Amaze ID
+ * session token (auth.amazecc.com) whose user has role `admin` in the shared
+ * amazecc-auth D1 database, re-checked on every request.
  */
 import { Hono } from "hono";
 
-import { adminAuthRoute } from "./auth";
 import { pushRoute } from "./push";
 import * as buses from "./buses";
 import * as cabshareHubs from "./cabshare-hubs";
@@ -52,7 +51,6 @@ export const adminRouter = new Hono();
 const ctx = <T extends Record<string, string>>(params: T) => ({ params: Promise.resolve(params) });
 
 /* ── auth & push (Hono sub-routers) ─────────────────────────────────────── */
-adminRouter.route("/", adminAuthRoute);
 adminRouter.route("/", pushRoute);
 
 /* ── simple admin CRUD ──────────────────────────────────────────────────── */
