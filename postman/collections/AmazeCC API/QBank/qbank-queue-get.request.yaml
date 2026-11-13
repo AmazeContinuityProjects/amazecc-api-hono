@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Queue'
+method: GET
+url: '{{base_url}}/api/qbank/admin/queue'
+order: 6000

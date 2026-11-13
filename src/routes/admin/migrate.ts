@@ -1,6 +1,6 @@
 import { getWorkerEnv } from "../../env";
 import { getDbPool } from '../../lib/db';
-import { requireAdminAuth } from '../../lib/auth';
+import { requireSuperadmin } from'../../lib/auth';
 import { checkRateLimit, rateLimitResponse, getClientIp } from '../../lib/rateLimit';
 
 
@@ -61,7 +61,7 @@ import { checkRateLimit, rateLimitResponse, getClientIp } from '../../lib/rateLi
  *         description: Migration failed or DATABASE_URL not set
  */
 export async function POST(req: Request) {
-  const authResult = await requireAdminAuth(req);
+  const authResult = await requireSuperadmin(req);
   if (authResult instanceof Response) return authResult;
 
   const ip = getClientIp(req);
@@ -313,7 +313,7 @@ export async function POST(req: Request) {
  *                   type: string
  */
 export async function GET(req: Request) {
-  const authResult = await requireAdminAuth(req);
+  const authResult = await requireSuperadmin(req);
   if (authResult instanceof Response) return authResult;
 
   try {

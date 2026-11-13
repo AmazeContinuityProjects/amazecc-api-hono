@@ -1,0 +1,8 @@
+$kind: collection
+name: QBank
+description: 'Question bank admin surface. Requires Amaze ID session with role=admin.'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{admin_token}}'

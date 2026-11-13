@@ -1,11 +1,11 @@
-import { requireAdminAuth } from "../../lib/auth";
+import { requireSection } from"../../lib/auth";
 import { getDbPool } from "../../lib/db";
 
 // All handlers: `(req: Request) => Promise<Response>` — byte-compatible port
 // of src/app/api/qbank/admin/questions/route.ts (Next.js).
 
 export async function GET(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
     const paperId = new URL(req.url).searchParams.get("paperId");
@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
     const { paperId } = (await req.json()) as any;
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
     const body = (await req.json()) as any;
@@ -78,7 +78,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
     const { questionId } = (await req.json()) as any;

@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Update Gorobo Item Stock'
+method: PATCH
+url: '{{base_url}}/api/admin/gorobo/items/stock'
+order: 6000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

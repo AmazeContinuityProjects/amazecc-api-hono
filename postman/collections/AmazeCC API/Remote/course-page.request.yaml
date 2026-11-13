@@ -1,0 +1,15 @@
+$kind: http-request
+name: 'Course Page'
+method: POST
+url: '{{base_url}}/api/remote/course-page'
+order: 13000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

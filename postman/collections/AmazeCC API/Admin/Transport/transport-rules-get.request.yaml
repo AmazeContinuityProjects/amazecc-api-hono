@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Transport Rules'
+method: GET
+url: '{{base_url}}/api/admin/transport/rules'
+order: 9000

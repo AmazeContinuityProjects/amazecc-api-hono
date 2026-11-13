@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Reject'
+method: POST
+url: '{{base_url}}/api/qbank/admin/reject'
+order: 10000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

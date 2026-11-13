@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Questions'
+method: GET
+url: '{{base_url}}/api/qbank/admin/questions'
+order: 1000

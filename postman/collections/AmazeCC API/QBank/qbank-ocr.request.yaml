@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'OCR'
+method: POST
+url: '{{base_url}}/api/qbank/admin/ocr'
+order: 8000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

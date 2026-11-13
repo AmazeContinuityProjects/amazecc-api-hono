@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Transport Route'
+method: POST
+url: '{{base_url}}/api/admin/transport/routes'
+order: 4000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

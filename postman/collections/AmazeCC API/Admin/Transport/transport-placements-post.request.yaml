@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Transport Placement'
+method: POST
+url: '{{base_url}}/api/admin/transport/placements'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

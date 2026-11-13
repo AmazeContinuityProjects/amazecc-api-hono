@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Gorobo Item'
+method: POST
+url: '{{base_url}}/api/admin/gorobo/items'
+order: 3000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

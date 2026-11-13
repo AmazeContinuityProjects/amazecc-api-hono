@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Bulk Import Questions'
+method: POST
+url: '{{base_url}}/api/qbank/admin/questions/bulk'
+order: 5000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "paperId": "",
+      "questions": []
+    }

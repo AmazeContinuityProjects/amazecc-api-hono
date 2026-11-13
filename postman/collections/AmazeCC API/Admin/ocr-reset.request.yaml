@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'OCR Reset'
+method: POST
+url: '{{base_url}}/api/admin/ocr/reset'
+order: 8000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

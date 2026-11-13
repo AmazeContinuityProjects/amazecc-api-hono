@@ -1,8 +1,8 @@
-import { requireAdminAuth } from '../../lib/auth';
+import { requireSection } from'../../lib/auth';
 import { getDbPool } from '../../lib/db';
 
 export async function GET(req: Request) {
-    const authResult = await requireAdminAuth(req);
+    const authResult = await requireSection('clubs')(req);
     if (authResult instanceof Response) {
         return authResult; // Unauthorized
     }
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-    const authResult = await requireAdminAuth(req);
+    const authResult = await requireSection('clubs')(req);
     if (authResult instanceof Response) {
         return authResult; // Unauthorized
     }

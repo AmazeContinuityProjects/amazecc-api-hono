@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Migrate (GET)'
+method: GET
+url: '{{base_url}}/api/admin/migrate'
+order: 5000

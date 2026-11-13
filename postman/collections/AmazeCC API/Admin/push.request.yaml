@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Push Notification Broadcast'
+method: POST
+url: '{{base_url}}/api/admin/push'
+order: 1000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "title": "Test Notification",
+      "body": "Hello from AmazeCC!"
+    }

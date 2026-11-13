@@ -1,0 +1,5 @@
+$kind: http-request
+name: Stats
+method: GET
+url: '{{base_url}}/api/admin/stats'
+order: 2000

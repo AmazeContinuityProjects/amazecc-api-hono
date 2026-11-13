@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Transport Rule'
+method: POST
+url: '{{base_url}}/api/admin/transport/rules'
+order: 10000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

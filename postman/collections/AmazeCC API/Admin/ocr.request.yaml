@@ -1,0 +1,11 @@
+$kind: http-request
+name: OCR
+method: POST
+url: '{{base_url}}/api/admin/ocr'
+order: 7000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

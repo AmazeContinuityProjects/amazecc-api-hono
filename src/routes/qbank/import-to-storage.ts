@@ -1,7 +1,7 @@
-import { requireAdminAuth } from "../../lib/auth";
+import { requireSection } from"../../lib/auth";
 import { getDbPool } from "../../lib/db";
 import { getWorkerEnv } from "../../env";
-import { AwsClient } from "aws4fetch";
+import { storagePut, storageUnavailable } from "../../lib/storage";
 
 const UA = "mozilla/5.0 (windows nt 10.0; win64; x64) applewebkit/537.36 (khtml, like gecko) chrome/91.0.4472.124 safari/537.36";
 
@@ -15,22 +15,9 @@ function getDirectDownloadUrl(url: string): string {
   return url;
 }
 
-function storageConfig() {
-  const env = getWorkerEnv();
-  const region = env.B2_REGION;
-  const endpoint = env.B2_ENDPOINT;
-  const accessKeyId = env.B2_ACCESS_KEY_ID;
-  const secretAccessKey = env.B2_SECRET_ACCESS_KEY;
-  const bucket = env.B2_BUCKET_NAME;
-  if (!region || !endpoint || !accessKeyId || !secretAccessKey || !bucket) {
-    throw new Error("B2/R2 storage is not configured (B2_REGION, B2_ENDPOINT, B2_ACCESS_KEY_ID, B2_SECRET_ACCESS_KEY, B2_BUCKET_NAME)");
-  }
-  return { region, endpoint: endpoint.replace(/\/+$/, ""), accessKeyId, secretAccessKey, bucket };
-}
-
 /** Port of src/app/api/qbank/admin/import-to-storage/route.ts. */
 export async function POST(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
 
   try {
@@ -70,19 +57,13 @@ export async function POST(req: Request) {
     const buffer = await response.arrayBuffer();
     const contentType = response.headers.get("content-type") || "application/pdf";
 
-    // Upload to R2/B2 (S3-compatible, path-style)
-    const { region, endpoint, accessKeyId, secretAccessKey, bucket } = storageConfig();
+    // Upload via the configured storage backend (R2 binding preferred, B2/S3 fallback)
     const key = `papers/${paperId}.pdf`;
     try {
-      const client = new AwsClient({ accessKeyId, secretAccessKey, service: "s3", region });
-      const putRes = await client.fetch(`${endpoint}/${bucket}/${key}`, {
-        method: "PUT",
-        body: buffer,
-        headers: { "content-type": contentType },
-      });
-      if (!putRes.ok) throw new Error(`storage responded ${putRes.status}`);
+      const ok = await storagePut(key, buffer, contentType);
+      if (!ok) return storageUnavailable();
     } catch (uploadError: unknown) {
-      console.error("R2 storage upload error:", uploadError);
+      console.error("Storage upload error:", uploadError);
       return Response.json(
         { success: false, error: `Storage upload failed: ${(uploadError instanceof Error ? uploadError.message : String(uploadError))}` },
         { status: 500 }

@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Delete Question'
+method: DELETE
+url: '{{base_url}}/api/qbank/admin/questions'
+order: 4000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

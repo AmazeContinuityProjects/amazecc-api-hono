@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Storage (GET)'
+method: GET
+url: '{{base_url}}/api/admin/storage'
+order: 9000

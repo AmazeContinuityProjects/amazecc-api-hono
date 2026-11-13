@@ -1,0 +1,8 @@
+$kind: http-request
+name: 'Delete Gorobo Bundle'
+method: DELETE
+url: '{{base_url}}/api/admin/gorobo/bundles/:id'
+order: 10000
+pathVariables:
+  - key: id
+    value: ''

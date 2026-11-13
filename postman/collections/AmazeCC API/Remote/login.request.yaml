@@ -1,0 +1,14 @@
+$kind: http-request
+name: Login
+method: POST
+url: '{{base_url}}/api/remote/login'
+order: 1000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "username": "{{username}}",
+      "password": "{{password}}"
+    }

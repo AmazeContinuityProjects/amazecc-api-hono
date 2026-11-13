@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Club Feed'
+method: GET
+url: '{{base_url}}/api/club-admin/feed'
+order: 6000

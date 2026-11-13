@@ -1,0 +1,3 @@
+$kind: collection
+name: 'Remote (VTOP Scrapers)'
+description: 'Direct, mostly stateless scrapes of VIT hosts (VTOP, LMS/Vitol, directory). Credentials go in the request body.'

@@ -1,0 +1,13 @@
+$kind: http-request
+name: 'Un-enroll'
+method: DELETE
+url: '{{base_url}}/api/services/enroll'
+order: 7000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "services": []
+    }

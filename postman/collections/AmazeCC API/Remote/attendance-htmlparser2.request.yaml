@@ -1,0 +1,15 @@
+$kind: http-request
+name: 'Attendance (htmlparser2)'
+method: POST
+url: '{{base_url}}/api/remote/attendance/htmlparser2'
+order: 4000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

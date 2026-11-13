@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Update Faculty Directory'
+method: PUT
+url: '{{base_url}}/api/admin/faculty-directories'
+order: 3000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

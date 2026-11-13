@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Transport Routes'
+method: GET
+url: '{{base_url}}/api/admin/transport/routes'
+order: 3000

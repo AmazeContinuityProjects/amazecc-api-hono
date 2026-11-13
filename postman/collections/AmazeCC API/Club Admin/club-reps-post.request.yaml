@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Add Club Rep'
+method: POST
+url: '{{base_url}}/api/club-admin/reps'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

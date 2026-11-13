@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Publish'
+method: POST
+url: '{{base_url}}/api/qbank/admin/publish'
+order: 9000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

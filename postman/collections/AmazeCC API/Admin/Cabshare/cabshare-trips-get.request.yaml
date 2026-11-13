@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Cabshare Trips'
+method: GET
+url: '{{base_url}}/api/admin/cabshare/trips'
+order: 3000

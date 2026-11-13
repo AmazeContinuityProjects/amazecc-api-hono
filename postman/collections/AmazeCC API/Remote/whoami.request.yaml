@@ -1,0 +1,15 @@
+$kind: http-request
+name: Who Am I
+method: POST
+url: '{{base_url}}/api/remote/whoami'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

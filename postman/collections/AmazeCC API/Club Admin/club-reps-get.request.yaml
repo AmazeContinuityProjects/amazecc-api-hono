@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Club Reps'
+method: GET
+url: '{{base_url}}/api/club-admin/reps'
+order: 1000

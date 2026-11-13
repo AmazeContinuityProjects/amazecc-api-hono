@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Faculty Directory'
+method: POST
+url: '{{base_url}}/api/admin/faculty-directories'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

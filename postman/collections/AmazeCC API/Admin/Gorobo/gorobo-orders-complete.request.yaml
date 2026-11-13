@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Complete Gorobo Order'
+method: POST
+url: '{{base_url}}/api/admin/gorobo/orders/:id/complete'
+order: 19000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

@@ -1,0 +1,8 @@
+$kind: collection
+name: Admin
+description: 'Admin-only surface. Requires an Amaze ID session token with role=admin.'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{admin_token}}'

@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Update Gorobo Item'
+method: PUT
+url: '{{base_url}}/api/admin/gorobo/items/:id'
+order: 4000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

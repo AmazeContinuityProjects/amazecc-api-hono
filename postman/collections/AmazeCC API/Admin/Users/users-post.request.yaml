@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create User'
+method: POST
+url: '{{base_url}}/api/admin/users'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

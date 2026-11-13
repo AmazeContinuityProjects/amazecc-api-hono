@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Update Question'
+method: PATCH
+url: '{{base_url}}/api/qbank/admin/questions'
+order: 3000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

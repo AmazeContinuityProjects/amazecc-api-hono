@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Fresher Resource'
+method: POST
+url: '{{base_url}}/api/admin/fresher-resources'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Promote Club Feed Post'
+method: POST
+url: '{{base_url}}/api/club-admin/feed/promote'
+order: 9000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

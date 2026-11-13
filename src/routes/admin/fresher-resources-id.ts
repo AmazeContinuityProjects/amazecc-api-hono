@@ -1,11 +1,11 @@
 import { getDbPool } from '../../lib/db';
-import { requireAdminAuth, hasAdminPermission } from '../../lib/auth';
+import { hasAdminPermission, requireSection } from'../../lib/auth';
 import { logAdminAction } from '../../lib/audit';
 import { publicErrorMessage } from "../../lib/publicError";
 
 
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('fresher-resources')(req);
   if (auth instanceof Response) return auth;
 
   if (!hasAdminPermission(auth, 'fresher-resources')) {
@@ -68,7 +68,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
 }
 
 export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('fresher-resources')(req);
   if (auth instanceof Response) return auth;
 
   if (!hasAdminPermission(auth, 'fresher-resources')) {

@@ -1,0 +1,8 @@
+$kind: http-request
+name: 'Delete Fresher Resource'
+method: DELETE
+url: '{{base_url}}/api/admin/fresher-resources/:id'
+order: 4000
+pathVariables:
+  - key: id
+    value: ''

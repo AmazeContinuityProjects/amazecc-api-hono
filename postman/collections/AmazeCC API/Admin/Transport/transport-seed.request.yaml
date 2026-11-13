@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Transport Seed'
+method: POST
+url: '{{base_url}}/api/admin/transport/seed'
+order: 12000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

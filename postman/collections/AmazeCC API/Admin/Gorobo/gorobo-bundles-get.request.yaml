@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Gorobo Bundles'
+method: GET
+url: '{{base_url}}/api/admin/gorobo/bundles'
+order: 7000

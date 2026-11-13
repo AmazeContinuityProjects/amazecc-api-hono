@@ -1,0 +1,15 @@
+$kind: http-request
+name: 'Marks Tokens'
+method: POST
+url: '{{base_url}}/api/services/marks/tokens'
+order: 4000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

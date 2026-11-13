@@ -1,0 +1,15 @@
+$kind: http-request
+name: OD Details
+method: POST
+url: '{{base_url}}/api/remote/od'
+order: 9000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

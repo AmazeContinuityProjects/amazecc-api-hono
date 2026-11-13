@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Fresher Resources'
+method: GET
+url: '{{base_url}}/api/admin/fresher-resources'
+order: 1000

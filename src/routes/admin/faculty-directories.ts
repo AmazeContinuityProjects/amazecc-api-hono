@@ -1,11 +1,11 @@
 import { getDbPool } from '../../lib/db';
-import { requireAdminAuth, hasAdminPermission } from '../../lib/auth';
+import { hasAdminPermission, requireSection } from'../../lib/auth';
 import { logAdminAction } from '../../lib/audit';
 import { publicErrorMessage } from "../../lib/publicError";
 
 
 export async function GET(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('faculty-directories')(req);
   if (auth instanceof Response) return auth;
 
   try {
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('faculty-directories')(req);
   if (auth instanceof Response) return auth;
 
   if (!hasAdminPermission(auth, ['faculty-directory', 'faculty-directories'])) {
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('faculty-directories')(req);
   if (auth instanceof Response) return auth;
 
   if (!hasAdminPermission(auth, ['faculty-directory', 'faculty-directories'])) {
@@ -102,7 +102,7 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('faculty-directories')(req);
   if (auth instanceof Response) return auth;
 
   if (!hasAdminPermission(auth, ['faculty-directory', 'faculty-directories'])) {

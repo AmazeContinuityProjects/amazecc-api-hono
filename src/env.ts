@@ -14,6 +14,11 @@ export interface WorkerEnv {
   /** Direct connection string - local dev only. */
   DATABASE_URL?: string;
   /**
+   * Native Cloudflare R2 bucket for QBank papers (papers/<id>.pdf). Preferred
+   * storage backend; falls back to B2_* S3-compatible credentials when unset.
+   */
+  PAPERS_BUCKET?: R2Bucket;
+  /**
    * Shared amazecc-auth D1 database. Amaze ID users/sessions are looked up
    * here; there is no per-service identity store.
    */

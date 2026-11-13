@@ -1,8 +1,8 @@
 import { getDbPool } from "../../lib/db";
-import { requireAdminAuth, hasAdminPermission } from "../../lib/auth";
+import { hasAdminPermission, requireSection } from"../../lib/auth";
 
 export async function GET(req: Request) {
-    const admin = await requireAdminAuth(req);
+    const admin = await requireSection('cabshare')(req);
     if (admin instanceof Response) return admin;
     if (!hasAdminPermission(admin, 'cabshare')) {
         return Response.json({ success: false, error: 'Permission denied: cabshare permission required' }, { status: 403 });
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-    const admin = await requireAdminAuth(req);
+    const admin = await requireSection('cabshare')(req);
     if (admin instanceof Response) return admin;
     if (!hasAdminPermission(admin, 'cabshare')) {
         return Response.json({ success: false, error: 'Permission denied: cabshare permission required' }, { status: 403 });

@@ -1,10 +1,10 @@
-import { requireAdminAuth } from "../../lib/auth";
+import { requireSection } from"../../lib/auth";
 import { getDbPool } from "../../lib/db";
 
 /** Port of src/app/api/qbank/admin/queue/route.ts. */
 
 export async function GET(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
     const pool = getDbPool();
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
     const body = (await req.json()) as any;

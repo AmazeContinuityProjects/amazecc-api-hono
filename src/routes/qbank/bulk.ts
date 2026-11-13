@@ -1,10 +1,10 @@
-import { requireAdminAuth } from "../../lib/auth";
+import { requireSection } from"../../lib/auth";
 import { getDbPool } from "../../lib/db";
 
 /** Port of src/app/api/qbank/admin/questions/bulk/route.ts. */
 export async function POST(req: Request) {
   try {
-    const auth = await requireAdminAuth(req);
+    const auth = await requireSection('qbank')(req);
     if (auth instanceof Response) return auth;
 
     const { paperId, questions } = (await req.json()) as any;

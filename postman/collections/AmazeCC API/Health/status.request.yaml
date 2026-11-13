@@ -1,0 +1,5 @@
+$kind: http-request
+name: Status
+method: GET
+url: '{{base_url}}/api/status'
+order: 2000

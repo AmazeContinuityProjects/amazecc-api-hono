@@ -1,0 +1,15 @@
+$kind: http-request
+name: 'Curriculum Download'
+method: POST
+url: '{{base_url}}/api/remote/curriculum/download'
+order: 12000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

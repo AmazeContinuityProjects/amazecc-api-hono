@@ -1,0 +1,15 @@
+$kind: http-request
+name: 'LMS Data'
+method: POST
+url: '{{base_url}}/api/remote/lms-data'
+order: 14000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

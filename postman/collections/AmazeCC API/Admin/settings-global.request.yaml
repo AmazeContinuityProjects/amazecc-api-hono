@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Update Global Settings'
+method: PUT
+url: '{{base_url}}/api/admin/settings/global'
+order: 4000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

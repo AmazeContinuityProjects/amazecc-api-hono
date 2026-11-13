@@ -1,0 +1,16 @@
+$kind: http-request
+name: 'Enroll'
+method: POST
+url: '{{base_url}}/api/services/enroll'
+order: 5000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}",
+      "services": []
+    }

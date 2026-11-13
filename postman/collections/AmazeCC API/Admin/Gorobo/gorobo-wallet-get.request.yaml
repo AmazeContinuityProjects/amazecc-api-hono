@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Gorobo Wallet'
+method: GET
+url: '{{base_url}}/api/admin/gorobo/wallet'
+order: 20000

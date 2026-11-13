@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Delete Club Feed Post'
+method: DELETE
+url: '{{base_url}}/api/club-admin/feed'
+order: 8000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

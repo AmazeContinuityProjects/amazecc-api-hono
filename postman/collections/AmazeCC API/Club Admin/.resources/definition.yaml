@@ -1,0 +1,8 @@
+$kind: collection
+name: 'Club Admin'
+description: 'Club representative surface. Auth: club HMAC bearer tokens.'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{club_token}}'

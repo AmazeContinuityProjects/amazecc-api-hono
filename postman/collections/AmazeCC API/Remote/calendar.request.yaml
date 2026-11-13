@@ -1,0 +1,15 @@
+$kind: http-request
+name: Calendar
+method: POST
+url: '{{base_url}}/api/remote/calendar'
+order: 19000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

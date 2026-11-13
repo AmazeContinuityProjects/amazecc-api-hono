@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Delete Club Representative'
+method: DELETE
+url: '{{base_url}}/api/admin/clubs/representatives'
+order: 5000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

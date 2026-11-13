@@ -1,5 +1,5 @@
 import { getDbPool } from '../../lib/db';
-import { requireAdminAuth } from '../../lib/auth';
+import { requireSection } from'../../lib/auth';
 
 
 
@@ -37,7 +37,7 @@ import { requireAdminAuth } from '../../lib/auth';
 
 
 export async function POST(req: Request) {
-  const authResult = await requireAdminAuth(req);
+  const authResult = await requireSection('ocr')(req);
   if (authResult instanceof Response) {
     return authResult;
   }

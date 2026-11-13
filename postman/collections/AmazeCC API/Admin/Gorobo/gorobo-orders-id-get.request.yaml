@@ -1,0 +1,8 @@
+$kind: http-request
+name: 'Get Gorobo Order by ID'
+method: GET
+url: '{{base_url}}/api/admin/gorobo/orders/:id'
+order: 13000
+pathVariables:
+  - key: id
+    value: ''

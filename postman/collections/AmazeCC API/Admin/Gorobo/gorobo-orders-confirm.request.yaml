@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Confirm Gorobo Order'
+method: POST
+url: '{{base_url}}/api/admin/gorobo/orders/:id/confirm'
+order: 18000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

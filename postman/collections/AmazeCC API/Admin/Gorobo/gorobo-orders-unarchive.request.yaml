@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Unarchive Gorobo Order'
+method: POST
+url: '{{base_url}}/api/admin/gorobo/orders/:id/unarchive'
+order: 17000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

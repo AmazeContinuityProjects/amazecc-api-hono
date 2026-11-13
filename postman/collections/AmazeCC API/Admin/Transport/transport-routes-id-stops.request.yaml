@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Add Transport Route Stops'
+method: POST
+url: '{{base_url}}/api/admin/transport/routes/:id/stops'
+order: 8000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

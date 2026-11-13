@@ -1,0 +1,8 @@
+$kind: http-request
+name: 'Get Transport Route by ID'
+method: GET
+url: '{{base_url}}/api/admin/transport/routes/:id'
+order: 5000
+pathVariables:
+  - key: id
+    value: ''

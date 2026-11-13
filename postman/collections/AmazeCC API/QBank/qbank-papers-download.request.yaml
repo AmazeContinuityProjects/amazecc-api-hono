@@ -1,0 +1,10 @@
+$kind: http-request
+name: 'Download Paper'
+method: GET
+url: '{{base_url}}/api/qbank/papers/download/:paperId'
+order: 12000
+auth:
+  type: noauth
+pathVariables:
+  - key: paperId
+    value: ''

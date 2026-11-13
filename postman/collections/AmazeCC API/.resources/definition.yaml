@@ -1,0 +1,16 @@
+$kind: collection
+name: AmazeCC API
+description: 'AmazeCC API - Cloudflare Workers + Hono. VTOP scrapers, services, admin, qbank, and club-admin surfaces. Base URL: https://amazecc-api-hono.sugeethjayaraj2007.workers.dev'
+variables:
+  - key: base_url
+    value: 'https://amazecc-api-hono.sugeethjayaraj2007.workers.dev'
+  - key: cookies
+    value: ''
+  - key: csrf
+    value: ''
+  - key: authorizedID
+    value: ''
+  - key: admin_token
+    value: ''
+  - key: club_token
+    value: ''

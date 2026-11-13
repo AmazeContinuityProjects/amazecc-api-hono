@@ -1,0 +1,16 @@
+$kind: http-request
+name: 'Curriculum Syllabus Download'
+method: POST
+url: '{{base_url}}/api/remote/curriculum/syllabus'
+order: 11000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}",
+      "courseCode": ""
+    }

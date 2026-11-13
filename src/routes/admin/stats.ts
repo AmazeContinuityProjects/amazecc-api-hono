@@ -1,10 +1,10 @@
-import { requireAdminAuth } from '../../lib/auth';
+import { requireSection } from'../../lib/auth';
 import { getDbPool } from '../../lib/db';
 import { ensureAuditLogsTable } from '../../lib/audit';
 
 
 export async function GET(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('dashboard')(req);
   if (auth instanceof Response) return auth;
 
   try {

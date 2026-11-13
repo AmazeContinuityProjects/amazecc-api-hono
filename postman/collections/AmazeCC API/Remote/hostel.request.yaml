@@ -1,0 +1,15 @@
+$kind: http-request
+name: Hostel
+method: POST
+url: '{{base_url}}/api/remote/hostel'
+order: 8000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

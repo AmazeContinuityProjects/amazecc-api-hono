@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Update Gorobo Bundle'
+method: PUT
+url: '{{base_url}}/api/admin/gorobo/bundles/:id'
+order: 9000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

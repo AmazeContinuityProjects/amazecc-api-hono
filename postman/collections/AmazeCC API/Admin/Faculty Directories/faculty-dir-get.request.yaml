@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Faculty Directories'
+method: GET
+url: '{{base_url}}/api/admin/faculty-directories'
+order: 1000

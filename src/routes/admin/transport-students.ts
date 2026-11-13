@@ -1,10 +1,10 @@
 import { getDbPool } from '../../lib/db';
-import { requireAdminAuth } from '../../lib/auth';
+import { requireSection } from'../../lib/auth';
 import type { BusStudentInput } from '../../types/transport';
 
 
 export async function POST(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('transport')(req);
   if (auth instanceof Response) return auth;
   if (!auth.permissions.includes('transport') && !auth.permissions.includes('buses')) {
     return Response.json({ success: false, error: 'Forbidden' }, { status: 403 });
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('transport')(req);
   if (auth instanceof Response) return auth;
   if (!auth.permissions.includes('transport') && !auth.permissions.includes('buses')) {
     return Response.json({ success: false, error: 'Forbidden' }, { status: 403 });

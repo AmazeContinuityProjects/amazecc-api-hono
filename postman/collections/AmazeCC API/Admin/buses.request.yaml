@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Add Bus'
+method: POST
+url: '{{base_url}}/api/admin/buses'
+order: 3000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "busNumber": "",
+      "route": ""
+    }

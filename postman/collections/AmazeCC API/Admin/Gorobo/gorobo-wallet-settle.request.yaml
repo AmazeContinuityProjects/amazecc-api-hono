@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Settle Gorobo Wallet Order'
+method: POST
+url: '{{base_url}}/api/admin/gorobo/wallet/orders/:id/settle'
+order: 21000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

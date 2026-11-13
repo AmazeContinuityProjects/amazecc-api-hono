@@ -1,0 +1,8 @@
+$kind: http-request
+name: 'Delete Gorobo Item'
+method: DELETE
+url: '{{base_url}}/api/admin/gorobo/items/:id'
+order: 5000
+pathVariables:
+  - key: id
+    value: ''

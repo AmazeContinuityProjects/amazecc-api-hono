@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Update Transport Route'
+method: PUT
+url: '{{base_url}}/api/admin/transport/routes/:id'
+order: 6000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

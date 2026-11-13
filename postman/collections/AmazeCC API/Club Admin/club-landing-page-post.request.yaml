@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Update Club Landing Page'
+method: POST
+url: '{{base_url}}/api/club-admin/landing-page'
+order: 11000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

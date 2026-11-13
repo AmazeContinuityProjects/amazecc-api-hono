@@ -1,0 +1,10 @@
+$kind: http-request
+name: 'Enrollment State'
+method: GET
+url: '{{base_url}}/api/services/enroll'
+order: 6000
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{admin_token}}'

@@ -38,7 +38,7 @@
 
 import { getWorkerEnv } from '../../env';
 import { getDbPool } from '../../lib/db';
-import { requireAdminAuth } from '../../lib/auth';
+import { requireSection } from'../../lib/auth';
 
 /**
  * @swagger
@@ -88,7 +88,7 @@ import { requireAdminAuth } from '../../lib/auth';
  */
 
 export async function POST(req: Request) {
-  const authResult = await requireAdminAuth(req);
+  const authResult = await requireSection('buses')(req);
   if (authResult instanceof Response) {
     return authResult;
   }

@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Delete Transport Student'
+method: DELETE
+url: '{{base_url}}/api/admin/transport/students'
+order: 14000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

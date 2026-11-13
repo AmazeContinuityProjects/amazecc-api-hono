@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Add Cabshare Hub'
+method: POST
+url: '{{base_url}}/api/admin/cabshare/hubs'
+order: 1000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

@@ -1,0 +1,15 @@
+$kind: http-request
+name: Transport
+method: POST
+url: '{{base_url}}/api/remote/transport'
+order: 16000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

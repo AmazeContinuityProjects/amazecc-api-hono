@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Club Feed Post'
+method: POST
+url: '{{base_url}}/api/club-admin/feed'
+order: 7000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

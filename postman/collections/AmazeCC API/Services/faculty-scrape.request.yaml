@@ -1,0 +1,13 @@
+$kind: http-request
+name: 'Faculty Scrape'
+method: POST
+url: '{{base_url}}/api/services/faculty/scrape'
+order: 8000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "url": ""
+    }

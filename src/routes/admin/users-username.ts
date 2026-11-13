@@ -1,246 +1,158 @@
 /**
- * @openapi
- * /api/admin/users/[username]:
- *   post:
- *     tags:
- *       - Admin
- *     summary: Auto-generated POST endpoint for /api/admin/users/[username]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               cookies:
- *                 type: string
- *               authorizedID:
- *                 type: string
- *               csrf:
- *                 type: string
- *     responses:
- *       200:
- *         description: Successful response
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               example:
- *                 user: "sample_value"
- *                 success: true
- *       400:
- *         description: Bad Request
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Internal Server Error
+ * /api/admin/users/[email] - mutate an Amaze ID (superadmin-only).
+ * [email] is the account email (URL-encoded). All permission changes hit the
+ * shared amazecc-auth D1 — enforcement is immediate, no token re-issue needed.
  */
-
-import { getDbPool } from '../../lib/db';
-import { requireAdminAuth } from '../../lib/auth';
-
+import { getWorkerEnv } from "../../env";
+import { requireSuperadmin } from "../../lib/auth";
+import { SECTION_KEYS, parsePermissions } from "../../lib/permissions";
 
 interface RouteContext {
   params: Promise<{ username: string }>;
 }
 
-/**
- * PATCH /api/admin/users/[username] - Update user role/permissions
- * Body: { role?: string, permissions?: string[], is_active?: boolean }
- */
+interface D1UserRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string | null;
+  permissions: string | null;
+  banned: number | null;
+  vtopRegNo: string | null;
+  createdAt: string;
+}
+
+const VALID_ROLES = new Set(["user", "admin", "superadmin"]);
+
+function toApiUser(row: D1UserRow) {
+  return {
+    id: row.id,
+    username: row.email,
+    name: row.name,
+    email: row.email,
+    role: row.role ?? "user",
+    permissions: parsePermissions(row.permissions),
+    is_active: !row.banned,
+    vtopRegNo: row.vtopRegNo ?? null,
+    created_at: row.createdAt,
+  };
+}
+
 export async function PATCH(req: Request, context: RouteContext) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSuperadmin(req);
   if (auth instanceof Response) return auth;
 
+  const db = getWorkerEnv().AUTH_DB;
+  if (!db) return Response.json({ success: false, error: "AUTH_DB not bound" }, { status: 500 });
+
   const { username } = await context.params;
-  const targetUsername = username.toUpperCase();
+  const email = decodeURIComponent(username).trim().toLowerCase();
 
   try {
-    const pool = getDbPool();
+    const target = await db
+      .prepare(`SELECT id, name, email, role, permissions, banned, vtopRegNo, createdAt FROM "user" WHERE email = ?1`)
+      .bind(email)
+      .first<D1UserRow>();
+    if (!target) return Response.json({ success: false, error: "User not found" }, { status: 404 });
 
-    // Check if requester is superadmin
-    const { rows: requester } = await pool.query(
-      'SELECT role FROM admin_users WHERE username = $1',
-      [auth.username]
-    );
+    const body = (await req.json()) as { role?: string; permissions?: string[]; is_active?: boolean };
 
-    if (!requester.length || requester[0].role !== 'superadmin') {
-      return Response.json(
-        { success: false, error: 'Only superadmins can update users' },
-        { status: 403 }
-      );
-    }
-
-    // Check if target user exists
-    const { rows: existing } = await pool.query(
-      'SELECT username, role FROM admin_users WHERE username = $1',
-      [targetUsername]
-    );
-
-    if (!existing.length) {
-      return Response.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    const body = await (req.json() as any);
-
-    // Prevent removing last superadmin
-    if (existing[0].role === 'superadmin') {
-      if (body.role && body.role !== 'superadmin') {
-        const { rows: superadminCount } = await pool.query(
-          'SELECT COUNT(*) as count FROM admin_users WHERE role = $1',
-          ['superadmin']
-        );
-        if (Number(superadminCount[0].count) <= 1) {
-          return Response.json(
-            { success: false, error: 'Cannot demote the last superadmin' },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    const updates: string[] = [];
+    const sets: string[] = [];
     const values: unknown[] = [];
     let paramIndex = 1;
 
     if (body.role !== undefined) {
-      if (!['admin', 'superadmin'].includes(body.role)) {
-        return Response.json(
-          { success: false, error: 'Invalid role' },
-          { status: 400 }
-        );
+      if (!VALID_ROLES.has(body.role)) {
+        return Response.json({ success: false, error: 'Invalid role. Must be "user", "admin" or "superadmin"' }, { status: 400 });
       }
-      updates.push(`role = $${paramIndex++}`);
+      if (email === auth.username.toLowerCase() && body.role !== "superadmin") {
+        return Response.json({ success: false, error: "You cannot demote yourself" }, { status: 400 });
+      }
+      // Prevent demoting the last superadmin
+      if (target.role === "superadmin" && body.role !== "superadmin") {
+        const { results } = await db.prepare(`SELECT COUNT(*) AS c FROM "user" WHERE role = 'superadmin'`).all<{ c: number }>();
+        if (Number(results?.[0]?.c ?? 0) <= 1) {
+          return Response.json({ success: false, error: "Cannot demote the last superadmin" }, { status: 400 });
+        }
+      }
+      sets.push(`role = $${paramIndex++}`);
       values.push(body.role);
     }
 
     if (body.permissions !== undefined) {
-      const validPermissions = [
-        'dashboard', 'qbank', 'buses', 'push', 'users', 'transport', 'gorobo',
-        'fresher-resources', 'faculty-directory', 'faculty-directories',
-        'cabshare', 'clubs', 'storage', 'audit_logs', 'settings'
-      ];
-      const invalidPerms = body.permissions.filter((p: string) => !validPermissions.includes(p));
-      if (invalidPerms.length > 0) {
-        return Response.json(
-          { success: false, error: `Invalid permissions: ${invalidPerms.join(', ')}` },
-          { status: 400 }
-        );
+      if (!Array.isArray(body.permissions)) {
+        return Response.json({ success: false, error: "permissions must be an array" }, { status: 400 });
       }
-      updates.push(`permissions = $${paramIndex++}`);
-      values.push(JSON.stringify(body.permissions));
+      const invalid = body.permissions.filter((p) => !(SECTION_KEYS as readonly string[]).includes(p));
+      if (invalid.length > 0) {
+        return Response.json({ success: false, error: `Invalid permissions: ${invalid.join(", ")}` }, { status: 400 });
+      }
+      sets.push(`permissions = $${paramIndex++}`);
+      values.push(body.permissions.length ? body.permissions.join(",") : null);
     }
 
     if (body.is_active !== undefined) {
-      updates.push(`is_active = $${paramIndex++}`);
-      values.push(body.is_active);
+      if (email === auth.username.toLowerCase() && body.is_active === false) {
+        return Response.json({ success: false, error: "You cannot deactivate yourself" }, { status: 400 });
+      }
+      sets.push(`banned = $${paramIndex++}`);
+      values.push(body.is_active ? 0 : 1);
     }
 
-    if (updates.length === 0) {
-      return Response.json(
-        { success: false, error: 'No valid fields to update' },
-        { status: 400 }
-      );
+    if (sets.length === 0) {
+      return Response.json({ success: false, error: "No valid fields to update" }, { status: 400 });
     }
 
-    values.push(targetUsername);
-    await pool.query(
-      `UPDATE admin_users SET ${updates.join(', ')} WHERE username = $${paramIndex}`,
-      values
-    );
+    values.push(email);
+    await db.prepare(`UPDATE "user" SET ${sets.join(", ")} WHERE email = $${paramIndex}`).bind(...values).run();
 
-    // Fetch updated user
-    const { rows: updated } = await pool.query(
-      'SELECT username, role, permissions, added_by, is_active, created_at FROM admin_users WHERE username = $1',
-      [targetUsername]
-    );
+    const updated = await db
+      .prepare(`SELECT id, name, email, role, permissions, banned, vtopRegNo, createdAt FROM "user" WHERE email = ?1`)
+      .bind(email)
+      .first<D1UserRow>();
 
-    return Response.json({ success: true, user: updated[0] });
-  } catch (error: unknown) {
-    console.error('Failed to update user:', error);
-    console.error('Failed to update user:', error);
-    return Response.json(
-      { success: false, error: (error instanceof Error ? error.message : String(error)) || "Internal server error" },
-      { status: 500 }
-    );
+    return Response.json({ success: true, user: updated ? toApiUser(updated) : undefined });
+  } catch (error) {
+    console.error("Failed to update user:", error);
+    return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
 }
 
 /**
- * DELETE /api/admin/users/[username] - Remove an admin user
+ * Superadmin-only: deactivate an Amaze ID (keeps the account; blocks admin
+ * sessions instantly because ban is checked on every request).
  */
 export async function DELETE(req: Request, context: RouteContext) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSuperadmin(req);
   if (auth instanceof Response) return auth;
 
+  const db = getWorkerEnv().AUTH_DB;
+  if (!db) return Response.json({ success: false, error: "AUTH_DB not bound" }, { status: 500 });
+
   const { username } = await context.params;
-  const targetUsername = username.toUpperCase();
+  const email = decodeURIComponent(username).trim().toLowerCase();
 
   try {
-    const pool = getDbPool();
-
-    // Check if requester is superadmin
-    const { rows: requester } = await pool.query(
-      'SELECT role FROM admin_users WHERE username = $1',
-      [auth.username]
-    );
-
-    if (!requester.length || requester[0].role !== 'superadmin') {
-      return Response.json(
-        { success: false, error: 'Only superadmins can delete users' },
-        { status: 403 }
-      );
+    if (email === auth.username.toLowerCase()) {
+      return Response.json({ success: false, error: "You cannot deactivate yourself" }, { status: 400 });
     }
+    const target = await db
+      .prepare(`SELECT email, role FROM "user" WHERE email = ?1`)
+      .bind(email)
+      .first<{ email: string; role: string | null }>();
+    if (!target) return Response.json({ success: false, error: "User not found" }, { status: 404 });
 
-    // Check if target user exists
-    const { rows: existing } = await pool.query(
-      'SELECT username, role FROM admin_users WHERE username = $1',
-      [targetUsername]
-    );
-
-    if (!existing.length) {
-      return Response.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Prevent deleting last superadmin
-    if (existing[0].role === 'superadmin') {
-      const { rows: superadminCount } = await pool.query(
-        'SELECT COUNT(*) as count FROM admin_users WHERE role = $1',
-        ['superadmin']
-      );
-      if (Number(superadminCount[0].count) <= 1) {
-        return Response.json(
-          { success: false, error: 'Cannot delete the last superadmin' },
-          { status: 400 }
-        );
+    if (target.role === "superadmin") {
+      const { results } = await db.prepare(`SELECT COUNT(*) AS c FROM "user" WHERE role = 'superadmin' AND banned = 0`).all<{ c: number }>();
+      if (Number(results?.[0]?.c ?? 0) <= 1) {
+        return Response.json({ success: false, error: "Cannot deactivate the last superadmin" }, { status: 400 });
       }
     }
 
-    // Prevent self-deletion
-    if (targetUsername === auth.username) {
-      return Response.json(
-        { success: false, error: 'Cannot delete yourself' },
-        { status: 400 }
-      );
-    }
-
-    await pool.query('DELETE FROM admin_users WHERE username = $1', [targetUsername]);
-
-    return Response.json({
-      success: true,
-      message: `User ${targetUsername} deleted successfully`,
-    });
-  } catch (error: unknown) {
-    console.error('Failed to delete user:', error);
-    return Response.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
+    await db.prepare(`UPDATE "user" SET banned = 1 WHERE email = ?1`).bind(email).run();
+    return Response.json({ success: true, message: `${email} deactivated` });
+  } catch (error) {
+    console.error("Failed to deactivate user:", error);
+    return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
 }

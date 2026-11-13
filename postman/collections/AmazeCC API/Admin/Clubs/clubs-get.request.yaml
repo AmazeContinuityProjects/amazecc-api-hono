@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Clubs'
+method: GET
+url: '{{base_url}}/api/admin/clubs'
+order: 1000

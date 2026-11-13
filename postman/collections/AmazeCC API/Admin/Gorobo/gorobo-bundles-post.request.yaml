@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Create Gorobo Bundle'
+method: POST
+url: '{{base_url}}/api/admin/gorobo/bundles'
+order: 8000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

@@ -1,0 +1,15 @@
+$kind: http-request
+name: 'Marks Stats'
+method: POST
+url: '{{base_url}}/api/services/marks/stats'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

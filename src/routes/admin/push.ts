@@ -6,14 +6,14 @@
  */
 import { Hono } from "hono";
 import { getDbPool } from "../../lib/db";
-import { requireAdminAuth } from "../../lib/auth";
+import { requireSection } from"../../lib/auth";
 import { sendWebPush, PushError } from "../../lib/webpush";
 import { hasAdminPermission } from "../../lib/auth";
 
 export const pushRoute = new Hono();
 
 pushRoute.post("/push", async (c) => {
-  const auth = await requireAdminAuth(c.req.raw);
+  const auth = await requireSection('push')(c.req.raw);
   if (auth instanceof Response) return auth;
   if (!hasAdminPermission(auth, "push")) {
     return Response.json({ success: false, error: "Forbidden" }, { status: 403 });

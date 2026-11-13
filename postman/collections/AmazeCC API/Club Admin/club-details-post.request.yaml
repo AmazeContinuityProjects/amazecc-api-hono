@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Update Club Details'
+method: POST
+url: '{{base_url}}/api/club-admin/details'
+order: 5000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

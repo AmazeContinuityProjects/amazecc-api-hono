@@ -1,0 +1,16 @@
+$kind: http-request
+name: 'Marks Sync'
+method: POST
+url: '{{base_url}}/api/services/marks/sync'
+order: 1000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}",
+      "contributions": []
+    }

@@ -1,0 +1,8 @@
+$kind: http-request
+name: 'Delete Transport Rule'
+method: DELETE
+url: '{{base_url}}/api/admin/transport/rules/:id'
+order: 11000
+pathVariables:
+  - key: id
+    value: ''

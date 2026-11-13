@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Archive Gorobo Order'
+method: POST
+url: '{{base_url}}/api/admin/gorobo/orders/:id/archive'
+order: 16000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

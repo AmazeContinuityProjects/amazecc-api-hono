@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Import to Storage'
+method: POST
+url: '{{base_url}}/api/qbank/admin/import-to-storage'
+order: 11000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

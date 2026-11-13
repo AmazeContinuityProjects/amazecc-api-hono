@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'Get Gorobo Orders'
+method: GET
+url: '{{base_url}}/api/admin/gorobo/orders'
+order: 11000

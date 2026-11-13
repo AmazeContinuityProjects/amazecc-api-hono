@@ -18,7 +18,10 @@ import {
   adminUnauthorized,
   getBearerToken,
   hasAdminPermission,
+  isAdminRole,
   requireAdminAuth,
+  requireSection,
+  requireSuperadmin,
   verifyAmazeSession,
   type AdminGrant,
   type AmazeIdIdentity,
@@ -29,7 +32,10 @@ export {
   adminUnauthorized,
   getBearerToken,
   hasAdminPermission,
+  isAdminRole,
   requireAdminAuth,
+  requireSection,
+  requireSuperadmin,
   verifyAmazeSession,
 };
 export type { AdminGrant, AmazeIdIdentity };

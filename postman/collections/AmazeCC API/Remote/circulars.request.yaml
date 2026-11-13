@@ -1,0 +1,15 @@
+$kind: http-request
+name: Circulars
+method: POST
+url: '{{base_url}}/api/remote/circulars'
+order: 17000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cookies": "{{cookies}}",
+      "csrf": "{{csrf}}",
+      "authorizedID": "{{authorizedID}}"
+    }

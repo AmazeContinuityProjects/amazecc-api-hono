@@ -1,4 +1,4 @@
-import { requireAdminAuth } from "../../lib/auth";
+import { requireSection } from"../../lib/auth";
 import { getDbPool } from "../../lib/db";
 
 /**
@@ -8,7 +8,7 @@ import { getDbPool } from "../../lib/db";
  * unchanged for behavioral parity.
  */
 export async function POST(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
     const { paperId } = (await req.json()) as any;

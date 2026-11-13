@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Add Transport Student'
+method: POST
+url: '{{base_url}}/api/admin/transport/students'
+order: 13000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {}

@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'Patch Gorobo Order'
+method: PATCH
+url: '{{base_url}}/api/admin/gorobo/orders/:id'
+order: 15000
+headers:
+  Content-Type: application/json
+pathVariables:
+  - key: id
+    value: ''
+body:
+  type: json
+  content: |-
+    {}

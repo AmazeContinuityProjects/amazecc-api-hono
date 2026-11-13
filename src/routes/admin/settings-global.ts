@@ -1,9 +1,9 @@
 import { getDbPool } from "../../lib/db";
-import { requireAdminAuth } from "../../lib/auth";
+import { requireSection } from"../../lib/auth";
 import { publicErrorMessage } from "../../lib/publicError";
 
 export async function PUT(req: Request) {
-    const authResult = await requireAdminAuth(req);
+    const authResult = await requireSection('settings')(req);
     if (authResult instanceof Response) return authResult;
 
     try {

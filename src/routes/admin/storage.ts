@@ -1,10 +1,10 @@
-import { requireAdminAuth } from '../../lib/auth';
+import { requireSection } from'../../lib/auth';
 import { getDbPool } from '../../lib/db';
 import { publicErrorMessage } from "../../lib/publicError";
 
 
 export async function GET(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('storage')(req);
   if (auth instanceof Response) return auth;
 
   try {
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdminAuth(req);
+  const auth = await requireSection('storage')(req);
   if (auth instanceof Response) return auth;
 
   try {
