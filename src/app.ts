@@ -16,6 +16,7 @@ import { qbankUploadRouter } from "./routes/qbank/upload";
 import { clubAdminRouter } from "./routes/club-admin";
 import { proxyRouter } from "./routes/proxy";
 import { guardRequest } from "./lib/guard";
+import { notificationsRouter } from "./routes/notifications";
 import { publicErrorMessage } from "./lib/publicError";
 
 export const app = new Hono();
@@ -73,6 +74,7 @@ app.route("/api/admin", adminRouter);
 app.route("/api/qbank/upload", qbankUploadRouter);
 app.route("/api/qbank", qbankRouter);
 app.route("/api/club-admin", clubAdminRouter);
+app.route("/api/notifications", notificationsRouter);
 // Catch-all: anything unmatched is proxied to the legacy API host.
 // Mounted last - native implementations always win.
 app.route("/api", proxyRouter);

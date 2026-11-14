@@ -17,21 +17,15 @@ qbankUploadRouter.post("/", async (c) => {
   const identity = await verifyAmazeSession(req);
   if (!identity) return adminUnauthorized();
 
-  const json = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!json) {
-    return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const { courseCode, title, paperType, examYear, examSemester, fileUrl } = json as {
+  const json = (await req.json().catch(() => null)) as {
     courseCode?: string;
     title?: string;
     paperType?: string;
     examYear?: string | number;
     examSemester?: string;
     fileUrl?: string;
-  };
-
-  if (!courseCode || !title || !fileUrl) {
+  } | null;
+  if (!json || !json.courseCode || !json.title || !json.fileUrl) {
     return Response.json({ success: false, error: "Missing required fields" }, { status: 400 });
   }
 
@@ -44,12 +38,12 @@ qbankUploadRouter.post("/", async (c) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING source_id`,
     [
-      courseCode,
-      title,
-      paperType || "CAT 1",
-      parseInt(String(examYear), 10) || new Date().getFullYear(),
-      examSemester || "Fall",
-      fileUrl,
+      json.courseCode,
+      json.title,
+      json.paperType || "CAT 1",
+      parseInt(String(json.examYear ?? ""), 10) || new Date().getFullYear(),
+      json.examSemester || "Fall",
+      json.fileUrl,
       uploader,
       "PENDING",
     ],
