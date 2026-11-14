@@ -32,9 +32,10 @@ const GUARDED: GuardedPath[] = [
   // GoRoBo orders - any Amaze ID; catalog seed - gorobo section
   { test: (p) => p === "/api/gorobo/orders" || p.startsWith("/api/gorobo/orders/"), guard: "amazeId" },
   { test: (p) => p === "/api/gorobo/seed" || p.startsWith("/api/gorobo/seed/"), guard: { section: "gorobo" } },
-  // Notifications - subscribe/unsubscribe/status are per-user; config/test are push admin
+  // Notifications - subscribe/unsubscribe are per-user (Amaze ID); status is
+  // public-by-endpoint (the endpoint itself is the device-level secret);
+  // config/test are push admin.
   { test: (p) => p === "/api/notifications/subscribe" || p === "/api/notifications/unsubscribe", guard: "amazeId" },
-  { test: (p) => p === "/api/notifications/status", guard: "amazeId" },
   { test: (p) => p === "/api/notifications/config" || p === "/api/notifications/test", guard: { section: "push" } },
   // Koha - library patron lookup is personal data, not the public catalog
   { test: (p) => p.startsWith("/api/koha/patron"), guard: "amazeId" },
