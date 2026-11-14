@@ -13,6 +13,7 @@ import { servicesRouter } from "./routes/services";
 import { adminRouter } from "./routes/admin";
 import { qbankRouter } from "./routes/qbank";
 import { clubAdminRouter } from "./routes/club-admin";
+import { proxyRouter } from "./routes/proxy";
 import { publicErrorMessage } from "./lib/publicError";
 
 export const app = new Hono();
@@ -53,13 +54,16 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.get("/api/status", (c) => c.json({ text: "API is working" }));
 
 app.route("/api/remote", remoteRouter);
-// Legacy alias: /api/login, /api/attendance, ... — same handlers as /api/remote/*.
+// Legacy alias: /api/login, /api/attendance, ... - same handlers as /api/remote/*.
 // Keeps existing clients (AmazeCC web, Kotlin, UniCC failover) working after the cutover.
 app.route("/api", remoteRouter);
 app.route("/api/services", servicesRouter);
 app.route("/api/admin", adminRouter);
 app.route("/api/qbank", qbankRouter);
 app.route("/api/club-admin", clubAdminRouter);
+// Catch-all: anything unmatched is proxied to the legacy API host.
+// Mounted last - native implementations always win.
+app.route("/api", proxyRouter);
 
 app.onError((err, c) => {
   console.error("[api] unhandled error:", err);
