@@ -324,3 +324,14 @@ export function hasAdminPermission(
   const perms = Array.isArray(required) ? required : [required];
   return perms.some((p) => admin.permissions.includes(p));
 }
+
+/**
+ * Any valid Amaze ID (session or OAuth access token). Used for first-party
+ * services that require sign-in but no specific role - QBank uploads, social,
+ * cabshare, gorobo orders, notifications, koha patron services.
+ */
+export async function requireAnyAmazeId(req: Request): Promise<AmazeIdIdentity | Response> {
+  const identity = await verifyAmazeSession(req);
+  if (!identity) return adminUnauthorized();
+  return identity;
+}
