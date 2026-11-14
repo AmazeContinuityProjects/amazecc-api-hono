@@ -12,8 +12,10 @@ import { remoteRouter } from "./routes/remote";
 import { servicesRouter } from "./routes/services";
 import { adminRouter } from "./routes/admin";
 import { qbankRouter } from "./routes/qbank";
+import { qbankUploadRouter } from "./routes/qbank/upload";
 import { clubAdminRouter } from "./routes/club-admin";
 import { proxyRouter } from "./routes/proxy";
+import { guardRequest } from "./lib/guard";
 import { publicErrorMessage } from "./lib/publicError";
 
 export const app = new Hono();
@@ -30,6 +32,14 @@ app.use("*", async (c, next) => {
   }
   await next();
   for (const [k, v] of Object.entries(corsHeaders())) c.res.headers.set(k, v);
+});
+
+// First-party service guard - runs BEFORE routers and the proxy, so gated
+// prefixes can never leak to the legacy backend anonymously.
+app.use("/api/*", async (c, next) => {
+  const denied = await guardRequest(c.req.raw);
+  if (denied) return denied;
+  await next();
 });
 
 function corsHeaders(): Record<string, string> {
@@ -59,6 +69,8 @@ app.route("/api/remote", remoteRouter);
 app.route("/api", remoteRouter);
 app.route("/api/services", servicesRouter);
 app.route("/api/admin", adminRouter);
+// Student upload: Amaze ID required; attributed to the session, never the body.
+app.route("/api/qbank/upload", qbankUploadRouter);
 app.route("/api/qbank", qbankRouter);
 app.route("/api/club-admin", clubAdminRouter);
 // Catch-all: anything unmatched is proxied to the legacy API host.
