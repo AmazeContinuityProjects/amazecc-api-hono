@@ -75,6 +75,14 @@ app.route("/api/qbank/upload", qbankUploadRouter);
 app.route("/api/qbank", qbankRouter);
 app.route("/api/club-admin", clubAdminRouter);
 app.route("/api/notifications", notificationsRouter);
+// Koha (webopaccc): NOT mounted natively — VIT's DMZ blackholes Cloudflare
+// egress (only vtopcc answers; probed 2026-11-14), so /api/koha/* falls
+// through to the reverse proxy to api.amazecc.com exactly as before. The
+// native implementation lives in src/routes/koha/ + src/lib/koha.ts, ready
+// to mount when the origin opens egress (or reaches Cloudflare via a proxy
+// we control). Amaze ID enforcement (patron = Amaze ID, search/detail
+// public) comes from lib/guard.ts.
+// app.route("/api/koha", kohaRouter);
 // Catch-all: anything unmatched is proxied to the legacy API host.
 // Mounted last - native implementations always win.
 app.route("/api", proxyRouter);
