@@ -3,9 +3,10 @@
  * AmazeCC service (social, cabshare, marks, …).
  *
  * Keyed by reg_no (plaintext VTOP register number, e.g. 25BLC1081) — no
- * masking. When a student first appears in any service, a row is created
- * here with claim_status = 'incomplete'. The student later claims their
- * Amaze ID account, which links D1 `users.sub` (amaze_sub) to this reg_no.
+ * masking. When a student first appears in any service (social sync,
+ * cabshare signup, marks), a row is created here with claim_status =
+ * 'incomplete'. The student later claims their Amaze ID account, which links
+ * D1 users.sub (amaze_sub) to this reg_no.
  *
  * Until claimed, Amaze-ID-authenticated routes return 403 profile_incomplete
  * with a "claim your Amaze ID" prompt.
@@ -97,9 +98,7 @@ export async function upsertStudentProfile(
   );
 
   const profile = await getStudentProfileByRegNo(cleanRegNo);
-  if (!profile) {
-    throw new Error(`Failed to read back student profile for reg_no ${cleanRegNo}`);
-  }
+  if (!profile) throw new Error("Failed to read back student profile");
   return profile;
 }
 
@@ -184,4 +183,40 @@ export async function backfillStudentProfile(
     display_name: displayName ?? undefined,
     phone_number: phoneNumber ?? undefined,
   });
+}
+
+/**
+ * Update a user's phone number with sanitization.
+ *
+ * Phone numbers are sanitized before storage:
+ *   - All non-digit characters are stripped
+ *   - Must be a valid 10-digit Indian mobile number (starts with 6/7/8/9)
+ *   - Stored as plain digits (no country code, no formatting)
+ *   - Optional field — can be cleared by sending empty string or null
+ */
+export async function updatePhoneNumber(
+  regNo: string,
+  phoneNumber: string | null,
+): Promise<string | null> {
+  const pool = getDbPool();
+  const cleanRegNo = regNo.trim().toUpperCase();
+
+  let sanitized: string | null = null;
+  if (phoneNumber !== null && phoneNumber !== undefined && phoneNumber !== "") {
+    const digits = phoneNumber.replace(/\D/g, "");
+    // Indian mobile: 10 digits, starts with 6/7/8/9
+    if (!/^[6-9]\d{9}$/.test(digits)) {
+      throw new Error("Invalid phone number. Provide a 10-digit mobile number.");
+    }
+    sanitized = digits;
+  }
+
+  await pool.query(
+    `UPDATE student_profiles
+       SET phone_number = $1, updated_at = NOW()
+     WHERE reg_no = $2`,
+    [sanitized, cleanRegNo],
+  );
+
+  return sanitized;
 }

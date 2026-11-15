@@ -21,6 +21,8 @@ const GUARDED: GuardedPath[] = [
   { test: (p) => p === "/api/qbank/upload" || p === "/api/qbank/upload/", guard: "amazeId" },
   // Social - any Amaze ID
   { test: (p) => p === "/api/social" || p.startsWith("/api/social/"), guard: "amazeId" },
+  // Profile - any Amaze ID
+  { test: (p) => p === "/api/profile" || p.startsWith("/api/profile/"), guard: "amazeId" },
   // Cabshare - any Amaze ID
   { test: (p) => p === "/api/cabshare" || p.startsWith("/api/cabshare/"), guard: "amazeId" },
   // Gorobo orders - any Amaze ID; gorobo seed - section gorobo
