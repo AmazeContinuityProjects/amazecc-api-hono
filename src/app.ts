@@ -75,6 +75,13 @@ app.route("/api/qbank/upload", qbankUploadRouter);
 app.route("/api/qbank", qbankRouter);
 app.route("/api/club-admin", clubAdminRouter);
 app.route("/api/notifications", notificationsRouter);
+// Events (EventHub) is NOT mounted natively: eventhubcc.vit.ac.in does not
+// answer Cloudflare's egress IPs (522/timeout), while the legacy host on
+// Render reaches it fine. /api/events/* therefore falls through to the
+// reverse proxy to api.amazecc.com exactly as before. The native
+// implementation lives in src/routes/events/ and src/lib/eventHubAuth.ts,
+// ready to mount if/when the origin allows Cloudflare egress.
+// app.route("/api/events", eventsRouter);
 // Catch-all: anything unmatched is proxied to the legacy API host.
 // Mounted last - native implementations always win.
 app.route("/api", proxyRouter);
