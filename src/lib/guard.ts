@@ -20,9 +20,9 @@ const GUARDED: GuardedPath[] = [
   // QBank upload - any Amaze ID (read/download stay public)
   { test: (p) => p === "/api/qbank/upload" || p === "/api/qbank/upload/", guard: "amazeId" },
   // Social - any Amaze ID
-  { test: (p) => p === "/api/services/social" || p.startsWith("/api/services/social/"), guard: "amazeId" },
+  { test: (p) => p === "/api/social" || p.startsWith("/api/social/"), guard: "amazeId" },
   // Cabshare - any Amaze ID
-  { test: (p) => p === "/api/services/cabshare" || p.startsWith("/api/services/cabshare/"), guard: "amazeId" },
+  { test: (p) => p === "/api/cabshare" || p.startsWith("/api/cabshare/"), guard: "amazeId" },
   // Gorobo orders - any Amaze ID; gorobo seed - section gorobo
   { test: (p) => p === "/api/services/gorobo/orders" || p.startsWith("/api/services/gorobo/orders/"), guard: "amazeId" },
   { test: (p) => p === "/api/services/gorobo/seed" || p.startsWith("/api/services/gorobo/seed/"), guard: { section: "gorobo" } },

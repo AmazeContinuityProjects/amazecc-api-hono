@@ -13,6 +13,8 @@ import { servicesRouter } from "./routes/services";
 import { adminRouter } from "./routes/admin";
 import { qbankRouter } from "./routes/qbank";
 import { clubAdminRouter } from "./routes/club-admin";
+import { cabshareRouter } from "./routes/services/cabshare";
+import { socialRouter } from "./routes/services/social";
 import { guardRequest } from "./lib/guard";
 import { publicErrorMessage } from "./lib/publicError";
 
@@ -69,6 +71,8 @@ app.route("/api/services", servicesRouter);
 app.route("/api/admin", adminRouter);
 app.route("/api/qbank", qbankRouter);
 app.route("/api/club-admin", clubAdminRouter);
+app.route("/api/cabshare", cabshareRouter);
+app.route("/api/social", socialRouter);
 
 app.onError((err, c) => {
   console.error("[api] unhandled error:", err);
