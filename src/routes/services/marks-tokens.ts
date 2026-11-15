@@ -10,7 +10,6 @@ import { getClientIp, checkRateLimit, rateLimitResponse } from "../../lib/rateLi
 import { getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
 import {
   ensureSchema,
-  legacyAssociations,
   ownerKeyFor,
   tokensForOwner,
 } from "../../lib/marksStats";
@@ -62,12 +61,9 @@ marksTokensRoute.post("/marks/tokens", async (c) => {
 
     await ensureSchema();
     const ownerKey = await ownerKeyFor(regNumber);
-    const [tokens, legacy] = await Promise.all([
-      tokensForOwner(ownerKey),
-      legacyAssociations(String(authorizedID), regNumber),
-    ]);
+    const tokens = await tokensForOwner(ownerKey);
 
-    return c.json({ success: true, tokens, legacy });
+    return c.json({ success: true, tokens, legacy: [] });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (/\b401\b|unauthor|\bsession\b|invalid\s*csrf/i.test(message)) {

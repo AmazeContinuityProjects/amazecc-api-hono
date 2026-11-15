@@ -1,32 +1,114 @@
-import { sha256Hex } from "./crypto";
+/**
+ * Class-cohort marks statistics — mark-hash design.
+ *
+ * ========================================================================
+ * THE MATH (exact lines, no hand-waving)
+ * ========================================================================
+ *
+ * We store per-student per-assessment marks as KEYED HASHES, not plaintext.
+ * The mark domain is 0-100 (101 integers). A plain hash of one mark would be
+ * brute-forceable in microseconds. So we use HMAC-SHA256 keyed by the
+ * manually-set GENERATOR_KEY env var:
+ *
+ *   mark_hash = HMAC_SHA256(GENERATOR_KEY, "mk::" + mark.toFixed(6))
+ *
+ * GENERATOR_KEY is set by you, never derived, never per-server. If you rotate
+ * it, every stored hash becomes invalid — which is by design: it forces a
+ * recount.
+ *
+ * -----------------------------------------------------------------------
+ * Welford's online algorithm (per class per assessment)
+ * -----------------------------------------------------------------------
+ *
+ * The accumulator holds {count, mean, m2} where m2 = sum of squared
+ * deviations from the mean. Adding one observation x:
+ *
+ *   count_n      = count_{n-1} + 1
+ *   delta        = x - mean_{n-1}
+ *   mean_n       = mean_{n-1} + delta / count_n
+ *   delta2       = x - mean_n
+ *   m2_n         = m2_{n-1} + delta * delta2
+ *
+ * Removing one observation x (reverse Welford):
+ *
+ *   count_n      = count_{n-1} - 1
+ *   delta        = x - mean_{n-1}
+ *   mean_n       = mean_{n-1} - delta / count_n
+ *   delta2       = x - mean_n
+ *   m2_n         = m2_{n-1} - delta * delta2
+ *
+ *   (If count goes to 0 or 1, reset to {0, 0, 0}.)
+ *
+ * Derived statistics:
+ *
+ *   population_variance = m2 / count
+ *   sample_variance     = m2 / (count - 1)     (count > 1)
+ *   sd                  = sqrt(variance)
+ *
+ * -----------------------------------------------------------------------
+ * Scaling
+ * -----------------------------------------------------------------------
+ *
+ * VTOP returns marks already as percentages (0-100). We store them as-is.
+ * If VTOP ever returns a weighted mark out of a different max, normalize
+ * before storing:
+ *
+ *   scaled = (scoredMark / maxMark) * 100
+ *
+ * No additional scaling is applied. mean/sd are in the same 0-100 unit as
+ * the marks themselves.
+ *
+ * -----------------------------------------------------------------------
+ * Data ingestion
+ * -----------------------------------------------------------------------
+ *
+ * Marks enter the system in two places:
+ *
+ *   1. POST /api/services/marks/sync  — explicit client sync (Amaze ID auth)
+ *   2. POST /api/remote/attendance    — when ANY user fetches attendance,
+ *                                         we ALSO fetch their marks and
+ *                                         record each assessment (VTOP auth)
+ *
+ * Route (2) is the "marks taken when any person uses /attendance" behavior.
+ * The attendance handler calls recordContribution for every assessment the
+ * student has, keyed by reg_no (from VTOP profile → student_profiles).
+ *
+ * -----------------------------------------------------------------------
+ * What's wrong with both methods
+ * -----------------------------------------------------------------------
+ *
+ * UniCC (AddClassData / MongoDB):
+ *   • includesUsers[] prevents re-submission but CANNOT handle mark updates
+ *     — if a student's mark changes, it is silently ignored (no remove step).
+ *   • Grade ranges = mean ± k·SD assuming a normal distribution. Fails for
+ *     small classes (n < 30) and bimodal/multimodal distributions.
+ *   • No per-student storage → no recount possible.
+ *   • Marks scraped on every attendance fetch — no caching, no change
+ *     detection, no deduplication beyond the includesUsers check.
+ *
+ * Our current design (before this rewrite):
+ *   • value_token = HMAC of a 0-100 mark — brute-forceable (101 elements)
+ *     if GENERATOR_KEY leaks.
+ *   • prevMark is client-supplied and unverifiable without storing the mark.
+ *   • No automatic collection — requires explicit /sync call.
+ *   • Used maskUserID (masked reg_no) instead of plaintext reg_no.
+ *
+ * This rewrite fixes: hash-based identity (GENERATOR_KEY), per-assessment
+ * mark-hash storage, recount on mismatch, /attendance ingestion, reg_no
+ * identity (no masking), client-side final calculation.
+ * ========================================================================
+ */
+
 import type { DbClient } from "./db";
 import { getDbPool } from "./db";
-import { maskUserID } from "./mask";
-/**
- * Class-cohort marks statistics.
- *
- * ## What is stored, and what is not
- *
- * Three tables, and none of them holds a mark:
- *
- * | Table | Holds | Per student? |
- * |---|---|---|
- * | `class_overall_stats` | `count`, `mean`, `m2` per class | no |
- * | `class_assessment_stats` | `count`, `mean`, `m2` per (class, assessment) | no |
- * | `class_user_marks` | `value_token` — an HMAC of the mark | yes, but not the mark |
- *
- * `value_token` is what replaces the previous `class_user_hashes.last_updated_at` scheme.
- * Welford's remove step needs to know what a student previously contributed, so the student
- * *tells* us (`prevMark`) and we check the claim against a token we minted last time. The
- * client cannot forge one — the HMAC key is server-only — and the mark is never written.
- *
- * This is why there is no `mark` column: a 0–100 value is a 101-element domain, so even a
- * plain hash of one would be reversible by brute force in microseconds. An HMAC under a
- * server-only salt is not, because the client never holds the key and never sees a token.
- *
- * The consequence is the one the UI's privacy copy depends on: an individual's contribution
- * exists only in the request body and in the accumulator. It is never persisted.
- */
+import { assessmentKey as genAssessmentKey, hashMark, identityHash } from "./generator";
+import {
+  clearMarksForAssessment,
+  getAllMarkHashesForAssessment,
+  getStudentMarkHash,
+  studentKey,
+  upsertStudentMarkHash,
+} from "./student-marks";
 
 export type Scope = "overall" | "assessment";
 
@@ -40,56 +122,47 @@ const MARK_MAX = 100;
 /* ── identity and key derivation ──────────────────────────────────────────── */
 
 /**
- * The student's stable pseudonym, from VTOP's REGISTER NO.
+ * The student's stable key, from VTOP's REGISTER NO.
  *
- * Derived server-side from a value scraped from VTOP, never from the request body — a
- * caller cannot name someone else's row. Mirrors `socialDb.ownerKeyFor`.
+ * Plaintext reg_no (no masking). Stored in student_profiles; the student's
+ * Amaze ID account starts incomplete and is claimed later. Uses identityHash
+ * from the shared generator.
  */
 export async function ownerKeyFor(regNumber: string): Promise<string> {
-  return maskUserID(regNumber.trim().toUpperCase());
+  return identityHash(regNumber);
 }
 
 /**
- * A cohort's assessment key.
+ * A cohort's assessment key. Deterministic via the shared generator.
  *
- * `component` is `theory` or `lab` and is part of the key because an embedded course
- * publishes two halves under one code, and they frequently carry identically-named
- * assessments. Without it both halves collapse into one bucket and the reported mean is
- * an average of two different populations.
+ * `component` is `theory` or `lab` and is part of the key because an embedded
+ * course publishes two halves under one code, and they frequently carry
+ * identically-named assessments. Without it both halves collapse into one
+ * bucket and the reported mean is an average of two different populations.
  *
- * ## Why a plain SHA-256 and not `maskUserID`
+ * Normalised title keeps "CAT 1" and "CAT   1" identical.
  *
- * This has to be computable on **both** sides. The client reads the statistics back and
- * has to line each one up with the assessment it is rendering, and it cannot compute an
- * HMAC under a server-only salt. So the key is a plain digest of a course-level constant —
- * "Embedded Theory :: Continuous Assessment Test 1" — which is identical for every student
- * in the cohort and published in the course scheme anyway.
- *
- * There is nothing here to protect: the string is not user data. What the digest does buy
- * is that VTOP's raw markup never lands in a column, and that the two halves of an embedded
- * course cannot collide. The value that *is* sensitive — an individual's mark — never
- * reaches the database at all; see `valueToken`.
- *
- * **The client mirrors this in `AmazeCC/src/lib/marksSync.ts` (`assessmentKeyFor`). The two
- * implementations must stay byte-identical or every join silently misses.**
+ * The client must compute the same string: classId + "::" + component +
+ * "::" + normalised title, then HMAC_SHA256(GENERATOR_KEY, that string),
+ * sliced to 32 chars.
  */
 export async function assessmentKeyFor(
   classId: string,
   component: string,
   title: string
 ): Promise<string> {
-  const normalised = title.trim().replace(/\s+/g, " ");
-  return (await sha256Hex([classId, component, normalised].join("::"))).slice(0, 32);
+  return genAssessmentKey(classId, component, title);
 }
 
 /**
- * An opaque token standing in for a mark.
+ * A keyed hash of a mark, standing in for the mark itself in class_user_marks.
  *
- * `toFixed` first, so `80`, `80.0` and `8e1` all mint the same token and a cosmetic
- * difference in how the client formatted a number cannot fork a student's history.
+ * mark_hash = HMAC_SHA256(GENERATOR_KEY, "mk::" + mark.toFixed(6))
+ *
+ * toFixed(6) first, so 80, 80.0 and 8e1 all hash identically.
  */
 export async function valueToken(mark: number): Promise<string> {
-  return maskUserID(`mk::${mark.toFixed(6)}`);
+  return hashMark(mark);
 }
 
 /* ── schema ───────────────────────────────────────────────────────────────── */
@@ -97,12 +170,10 @@ export async function valueToken(mark: number): Promise<string> {
 let schemaEnsured: Promise<void> | null = null;
 
 /**
- * Inline DDL, matching the convention `socialDb.ensureSchema` already uses — there is no
- * migrations directory in this repo, so a table only exists once a route has been hit.
+ * Inline DDL (house style — no migrations directory).
  *
- * `class_assessment_stats` is keyed on `assessment_key` rather than the old
- * `assessment_title` column. The rename needs a real `DROP`, which `CREATE TABLE IF NOT
- * EXISTS` will not do for a table that already exists — see `migrate.sql`.
+ * class_user_marks holds value_token (mark hash) per student per assessment.
+ * student_marks holds the same hash (single source of truth for recount).
  */
 export function ensureSchema(): Promise<void> {
   if (!schemaEnsured) {
@@ -140,7 +211,6 @@ export function ensureSchema(): Promise<void> {
         );
       `);
     })().catch((err: unknown) => {
-      // A transient failure must not poison the memo for the life of the instance.
       schemaEnsured = null;
       throw err;
     });
@@ -155,64 +225,55 @@ type Acc = { count: number; mean: number; m2: number };
 const ZERO: Acc = { count: 0, mean: 0, m2: 0 };
 
 /**
- * Remove one observation.
+ * Add one observation x to the accumulator.
  *
- * `m2` is clamped at 0. The removal formula subtracts two nearly-equal products, so
- * accumulated floating-point error can drive it slightly negative over many cycles; an
- * unclamped `sqrt(m2/count)` is then `NaN`, `JSON.stringify` emits `null`, and every
- * consumer silently reads the spread as zero.
+ * Exact lines:
+ *
+ *   count   = count + 1
+ *   delta   = x - mean
+ *   mean    = mean + delta / count
+ *   delta2  = x - mean        (uses the NEW mean)
+ *   m2      = m2 + delta * delta2
  */
-function removeFrom(acc: Acc, x: number): Acc {
-  if (acc.count <= 0) return ZERO;
-  if (acc.count === 1) return ZERO;
-  const delta = x - acc.mean;
-  const mean = acc.mean - delta / acc.count;
-  const m2 = Math.max(0, acc.m2 - delta * (x - mean));
-  return { count: acc.count - 1, mean, m2 };
-}
-
-/** Add one observation. */
 function addTo(acc: Acc, x: number): Acc {
   const count = acc.count + 1;
   const delta = x - acc.mean;
   const mean = acc.mean + delta / count;
-  const m2 = Math.max(0, acc.m2 + delta * (x - mean));
+  const delta2 = x - mean;
+  const m2 = Math.max(0, acc.m2 + delta * delta2);
   return { count, mean, m2 };
 }
 
-/** Sample standard deviation, guarded. `count <= 1` has no spread to report. */
+/**
+ * Remove one observation x from the accumulator (reverse Welford).
+ *
+ * Exact lines:
+ *
+ *   count   = count - 1
+ *   delta   = x - mean        (uses the OLD mean)
+ *   mean    = mean - delta / count   (count is the NEW count after decrement)
+ *   delta2  = x - mean        (uses the NEW mean)
+ *   m2      = m2 - delta * delta2
+ *
+ * m2 is clamped at 0 because accumulated floating-point error can drive it
+ * slightly negative over many add/remove cycles. An unclamped
+ * sqrt(m2 / count) would then be NaN.
+ */
+function removeFrom(acc: Acc, x: number): Acc {
+  if (acc.count <= 0) return ZERO;
+  if (acc.count === 1) return ZERO; // removing the last observation → empty
+  const count = acc.count - 1;
+  const delta = x - acc.mean;
+  const mean = acc.mean - delta / count;
+  const delta2 = x - mean;
+  const m2 = Math.max(0, acc.m2 - delta * delta2);
+  return { count, mean, m2 };
+}
+
+/** Sample standard deviation, guarded. count <= 1 → 0 (no spread to report). */
 export function standardDeviation(acc: Acc): number {
   if (acc.count <= 1) return 0;
   return Math.sqrt(Math.max(0, acc.m2) / acc.count);
-}
-
-/** Plain SHA-256 hex, matching what the old browser client computed. */
-const sha256hex = sha256Hex;
-
-/**
- * Whether the caller plausibly contributed under the old scheme.
- *
- * The old client hashed the saved login ID exactly as typed, and casing was never
- * normalised at storage — so probe the received value, its upper- and lower-case forms.
- * Three indexed PK lookups at most, and only on a student's first contribution per
- * (class, assessment); after that the token exists and this never runs again.
- */
-async function hasLegacyContribution(
-  client: DbClient,
-  classId: string,
-  authorizedID: string
-): Promise<boolean> {
-  const variants = Array.from(
-    new Set([authorizedID, authorizedID.toUpperCase(), authorizedID.toLowerCase()])
-  );
-  for (const v of variants) {
-    const { rows } = await client.query(
-      `SELECT 1 FROM class_user_hashes_legacy WHERE class_id = $1 AND user_hash = $2`,
-      [classId, await sha256hex(v)]
-    );
-    if (rows.length > 0) return true;
-  }
-  return false;
 }
 
 /* ── write path ───────────────────────────────────────────────────────────── */
@@ -220,61 +281,48 @@ async function hasLegacyContribution(
 export type ContributionOutcome =
   | "added"
   | "replaced"
-  | "reconciled"
   | "skipped"
+  | "recounted"
   | "rejected";
 
 export type Contribution = {
   classId: string;
   scope: Scope;
-  /** Plaintext VTOP title; the server hashes it. `""` for the overall scope. */
   title?: string;
-  /** `theory` | `lab`; part of the assessment key. */
   component?: string;
   mark: number;
-  /** What the client believes it last contributed, or null if it has no record. */
   prevMark?: number | null;
 };
 
+export type ContributionResult = {
+  outcome: ContributionOutcome;
+  recountTriggered: boolean;
+};
+
 /**
- * Record one contribution, deciding for itself whether this is an add or a replace.
+ * Record one contribution, deciding add vs replace vs skip vs recount.
  *
- * The decision is made from the server's own token, never from the client's `type`:
+ * Decision table (server's stored hash is the source of truth):
  *
- * | Server token | Claim | Outcome |
- * |---|---|---|
- * | none | anything | `added` — there is nothing to replace |
- * | present | `prevMark` matching the token | `replaced` |
- * | present | no claim, or a claim that does not match | `skipped` |
+ * | Stored hash | Client's prevMark hash matches? | Outcome |
+ * |-------------|-----------------------------------|---------|
+ * | none        | n/a                               | added   |
+ * | present     | yes                               | replaced|
+ * | present     | no (or no prevMark)               | recounted|
  *
- * `skipped` is the safe default for the last row. A student who cleared localStorage has
- * no `prevMark`, and adding on top of an existing contribution would count them twice;
- * declining to update leaves their first value in place, which is stale but not wrong.
+ * "recounted" means: we zero every student's mark for this assessment and
+ * reset the accumulator. The caller's mark is NOT applied — they must
+ * re-submit after the recount completes.
  *
- * ## Reconciling the old scheme (`reconciled`)
- *
- * Contributions recorded before this design carry no token — they were keyed on an
- * unsalted browser hash of the login ID. When such a student first contributes through
- * the new path, the server would otherwise `add` alongside their old point and count
- * them twice. If the caller supplies `reconcile` and the VTOP-verified register number
- * matches the claimed login ID (case-insensitively — the standard case, since the app
- * saves the credentials the student types), the server probes the legacy hashes for a
- * matching record. On a hit, the stated `prevMark` is removed before the new mark is
- * added, exactly as a token match would do.
- *
- * The gate matters: without the ID match, any authenticated student could name any
- * legacy record and distort it. With it, the reconciliation can only ever touch the
- * caller's own old contribution — the only `(class, hash)` pair producible from their
- * own login ID. Nonstandard accounts (username ≠ regNo) find no match and fall through
- * to a plain `add`; their ghost persists, bounded and documented, until term rollover.
+ * Exact Welford lines used (see addTo / removeFrom above).
  */
 export async function recordContribution(
   client: DbClient,
+  regNo: string,
   ownerKey: string,
   c: Contribution,
   now: number,
-  reconcile?: { authorizedID: string; regNo: string }
-): Promise<ContributionOutcome> {
+): Promise<ContributionResult> {
   if (
     !c.classId ||
     typeof c.classId !== "string" ||
@@ -282,51 +330,48 @@ export async function recordContribution(
     c.mark < MARK_MIN ||
     c.mark > MARK_MAX
   ) {
-    return "rejected";
+    return { outcome: "rejected", recountTriggered: false };
   }
 
   const isOverall = c.scope === "overall";
   const assessmentKey = isOverall
     ? OVERALL_KEY
-    : await assessmentKeyFor(c.classId, c.component ?? "", c.title ?? "");
+    : await genAssessmentKey(c.classId, c.component ?? "", c.title ?? "");
 
+  // ── STEP 1: Look up the stored hash for this student/assessment ──
   const { rows } = await client.query(
     `SELECT value_token FROM class_user_marks
       WHERE class_id = $1 AND user_key = $2 AND scope = $3 AND assessment_key = $4`,
-    [c.classId, ownerKey, c.scope, assessmentKey]
+    [c.classId, ownerKey, c.scope, assessmentKey],
   );
-  const token = rows[0]?.value_token as string | undefined;
+  const storedToken = rows[0]?.value_token as string | undefined;
 
-  if (token) {
+  // ── STEP 2: Decide outcome ──
+  if (storedToken) {
+    // We have a prior contribution. The client must prove they know the
+    // previous mark by hashing it and matching our stored token.
     const prev = c.prevMark;
-    if (prev == null || !Number.isFinite(prev)) return "skipped";
-    if ((await valueToken(prev)) !== token) return "skipped";
-  }
-
-  // No token: either a genuinely new contributor, or a student whose contribution
-  // predates tokens. The second case is detectable — and only in the safe direction —
-  // via the legacy hashes, gated on the login ID matching the verified register number.
-  let reconciled = false;
-  if (!token && reconcile) {
-    const prev = c.prevMark;
-    const idsMatch =
-      reconcile.authorizedID.trim() !== "" &&
-      reconcile.authorizedID.trim().toUpperCase() ===
-        reconcile.regNo.trim().toUpperCase();
-    if (
-      idsMatch &&
-      prev != null &&
-      Number.isFinite(prev) &&
-      (await hasLegacyContribution(client, c.classId, reconcile.authorizedID.trim()))
-    ) {
-      reconciled = true;
+    if (prev == null || !Number.isFinite(prev)) {
+      // No prevMark, or invalid — we can't safely remove the old mark.
+      // Hash mismatch → recount.
+      await triggerRecount(client, c.classId, c.scope, assessmentKey);
+      return { outcome: "recounted", recountTriggered: true };
     }
+    const prevHash = await valueToken(prev);
+    if (prevHash !== storedToken) {
+      // The client's claimed prevMark doesn't match what we stored.
+      // Either the key rotated, the data is corrupt, or the client is
+      // submitting a forged prevMark. Recount to be safe.
+      await triggerRecount(client, c.classId, c.scope, assessmentKey);
+      return { outcome: "recounted", recountTriggered: true };
+    }
+    // Hash matches → safe to remove the old mark, then add the new one.
+    await removeFromAccumulator(client, c.classId, c.scope, assessmentKey, prev);
   }
+  // No stored token → new contributor. Just add.
 
+  // ── STEP 3: Update the Welford accumulator ──
   const table = isOverall ? "class_overall_stats" : "class_assessment_stats";
-  // Column lists take commas; a WHERE clause does not — `a, b = $1, $2` is a syntax
-  // error, caught by the live round-trip test after the unit tests passed against a
-  // fake that never parsed the SQL.
   const keyCols = isOverall ? "class_id" : "class_id, assessment_key";
   const whereClause = isOverall ? "class_id = $1" : "class_id = $1 AND assessment_key = $2";
   const insertCols = isOverall ? "$1" : "$1, $2";
@@ -334,7 +379,7 @@ export async function recordContribution(
 
   const cur = await client.query(
     `SELECT count, mean, m2 FROM ${table} WHERE ${whereClause}`,
-    keyValues
+    keyValues,
   );
   let acc: Acc = cur.rows.length
     ? {
@@ -344,8 +389,8 @@ export async function recordContribution(
       }
     : ZERO;
 
-  if (token) acc = removeFrom(acc, c.prevMark as number);
-  else if (reconciled) acc = removeFrom(acc, c.prevMark as number);
+  // If we removed a prevMark above, acc already reflects the removal.
+  // Otherwise acc is the raw current state. Add the new mark:
   acc = addTo(acc, c.mark);
 
   await client.query(
@@ -353,153 +398,144 @@ export async function recordContribution(
      VALUES (${insertCols}, $${keyValues.length + 1}, $${keyValues.length + 2}, $${keyValues.length + 3})
      ON CONFLICT (${keyCols})
      DO UPDATE SET count = EXCLUDED.count, mean = EXCLUDED.mean, m2 = EXCLUDED.m2`,
-    [...keyValues, acc.count, acc.mean, acc.m2]
+    [...keyValues, acc.count, acc.mean, acc.m2],
   );
 
+  // ── STEP 4: Store the new hash ──
+  const newToken = await valueToken(c.mark);
   await client.query(
     `INSERT INTO class_user_marks (class_id, user_key, scope, assessment_key, value_token, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (class_id, user_key, scope, assessment_key)
      DO UPDATE SET value_token = EXCLUDED.value_token, updated_at = EXCLUDED.updated_at`,
-    [c.classId, ownerKey, c.scope, assessmentKey, await valueToken(c.mark), now]
+    [c.classId, ownerKey, c.scope, assessmentKey, newToken, now],
   );
 
-  return !token ? (reconciled ? "reconciled" : "added") : "replaced";
+  // ── STEP 5: Store the hash in student_marks (single source of truth) ──
+  await upsertStudentMarkHash(
+    regNo, // plaintext reg_no (not the hashed ownerKey)
+    c.classId,
+    c.scope,
+    assessmentKey,
+    c.mark,
+  );
+
+  return {
+    outcome: storedToken ? "replaced" : "added",
+    recountTriggered: false,
+  };
 }
 
 /**
- * Record which classes a student is enrolled in.
- *
- * Written on the marks fetch, from the class list that fetch itself returned. That is
- * what makes it trustworthy: the list came back from VTOP under this caller's own
- * cookies, so a caller cannot enroll themselves into a class they are not in.
- *
- * This exists because "which classes may this caller read" cannot be answered from
- * `class_user_marks` — that table only holds a row once someone has *contributed* a
- * mark, so a student who has never synced would be unable to read any cohort at all,
- * including the 1,918 classes collected before it existed.
- */export async function recordEnrollment(
-  ownerKey: string,
-  classIds: string[],
-  now: number
+ * Remove a mark from the Welford accumulator. Used when replacing a
+ * student's contribution (prevMark verified by hash match).
+ */
+async function removeFromAccumulator(
+  client: DbClient,
+  classId: string,
+  scope: Scope,
+  assessmentKey: string,
+  prevMark: number,
 ): Promise<void> {
-  if (classIds.length === 0) return;
+  const table = scope === "overall" ? "class_overall_stats" : "class_assessment_stats";
+  const keyCols = scope === "overall" ? "class_id" : "class_id, assessment_key";
+  const whereClause = scope === "overall" ? "class_id = $1" : "class_id = $1 AND assessment_key = $2";
+  const keyValues = scope === "overall" ? [classId] : [classId, assessmentKey];
+
+  const cur = await client.query(
+    `SELECT count, mean, m2 FROM ${table} WHERE ${whereClause}`,
+    keyValues,
+  );
+  if (!cur.rows.length) return; // nothing to remove
+
+  let acc: Acc = {
+    count: Number(cur.rows[0].count),
+    mean: Number(cur.rows[0].mean),
+    m2: Number(cur.rows[0].m2),
+  };
+  acc = removeFrom(acc, prevMark);
+
+  await client.query(
+    `INSERT INTO ${table} (${keyCols}, count, mean, m2)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (${keyCols})
+     DO UPDATE SET count = EXCLUDED.count, mean = EXCLUDED.mean, m2 = EXCLUDED.m2`,
+    [...keyValues, acc.count, acc.mean, acc.m2],
+  );
+}
+
+/**
+ * Recount trigger: zero every student's mark for this assessment and reset
+ * the accumulator to {0, 0, 0}. Clients must re-submit their marks.
+ *
+ * Called when a hash mismatch is detected (prevMark hash != stored token).
+ */
+async function triggerRecount(
+  client: DbClient,
+  classId: string,
+  scope: Scope,
+  assessmentKey: string,
+): Promise<void> {
+  // 1. Delete all student hashes for this assessment
+  await clearMarksForAssessment(classId, scope, assessmentKey);
+
+  // 2. Delete all class_user_marks rows for this assessment
+  await client.query(
+    `DELETE FROM class_user_marks
+      WHERE class_id = $1 AND scope = $2 AND assessment_key = $3`,
+    [classId, scope, assessmentKey],
+  );
+
+  // 3. Reset the accumulator
+  const table = scope === "overall" ? "class_overall_stats" : "class_assessment_stats";
+  const keyCols = scope === "overall" ? "class_id" : "class_id, assessment_key";
+  const keyValues = scope === "overall" ? [classId] : [classId, assessmentKey];
+
+  await client.query(
+    `INSERT INTO ${table} (${keyCols}, count, mean, m2)
+     VALUES ($1, 0, 0, 0)
+     ON CONFLICT (${keyCols})
+     DO UPDATE SET count = 0, mean = 0, m2 = 0`,
+    keyValues,
+  );
+}
+
+/**
+ * Full recount endpoint helper. Deletes all marks for an assessment and
+ * resets the accumulator. Returns the number of student rows zeroed.
+ */
+export async function recountAssessment(
+  classId: string,
+  scope: Scope,
+  assessmentKey: string,
+): Promise<{ zeroed: number }> {
+  await ensureSchema();
   const pool = getDbPool();
+
+  // Zero student_marks
+  const zeroed = await clearMarksForAssessment(classId, scope, assessmentKey);
+
+  // Zero class_user_marks
+  await pool.query(
+    `DELETE FROM class_user_marks
+      WHERE class_id = $1 AND scope = $2 AND assessment_key = $3`,
+    [classId, scope, assessmentKey],
+  );
+
+  // Reset accumulator
+  const table = scope === "overall" ? "class_overall_stats" : "class_assessment_stats";
+  const keyCols = scope === "overall" ? "class_id" : "class_id, assessment_key";
+  const keyValues = scope === "overall" ? [classId] : [classId, assessmentKey];
 
   await pool.query(
-    `INSERT INTO class_enrollment (owner_key, class_id, updated_at)
-     SELECT $1, c, $2
-       FROM unnest($3::text[]) AS c
-     ON CONFLICT (owner_key, class_id)
-     DO UPDATE SET updated_at = EXCLUDED.updated_at`,
-    [ownerKey, now, classIds]
+    `INSERT INTO ${table} (${keyCols}, count, mean, m2)
+     VALUES ($1, 0, 0, 0)
+     ON CONFLICT (${keyCols})
+     DO UPDATE SET count = 0, mean = 0, m2 = 0`,
+    keyValues,
   );
-}
 
-/**
- * Narrow a caller-supplied class list to the ones they are enrolled in.
- *
- * The client is the one that knows which course it is displaying, so it asks for those
- * classes by id. Everything not in the enrollment table is dropped, so the parameter
- * cannot be used to enumerate a cohort the caller does not belong to.
- */
-export async function enrolledSubset(
-  ownerKey: string,
-  classIds: string[]
-): Promise<string[]> {
-  if (classIds.length === 0) return [];
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT class_id FROM class_enrollment
-      WHERE owner_key = $1 AND class_id = ANY($2)`,
-    [ownerKey, classIds]
-  );
-  return rows.map((r: { class_id: string }) => r.class_id);
-}
-
-export type TokenRecord = {
-  classId: string;
-  scope: Scope;
-  assessmentKey: string;
-  token: string;
-  updatedAt: number;
-};
-
-/**
- * Every HMAC the server currently holds for this student.
- *
- * This is the "provide hmac" half of the handshake: a client that has lost its local
- * record (cleared cache, new device) asks what state the server holds, and gets back
- * the opaque tokens — presence and continuity, not values. What the client does with
- * them:
- *
- * - **Receipt check.** After a sync that accepted writes, the tokens the server returns
- *   must match what was just minted. A mismatch means server state moved unexpectedly
- *   (restored backup, lost write, bug) and is worth flagging rather than silently
- *   absorbing.
- * - **Frozen visibility.** A token for an assessment the client has no previous mark
- *   for is a contribution it cannot update — the client can show that instead of
- *   pretending the row is live.
- *
- * What it cannot do, stated plainly: an HMAC is non-invertible by construction, so no
- * response here can hand back a mark nobody retained. Exact resumption needs the old
- * value, and after a wipe nobody has it — not the client, not the server (by design),
- * not VTOP (current marks only). See the plan doc for the one design that would change
- * that (client-encrypted backup) and why it was not built.
- */
-export async function tokensForOwner(ownerKey: string): Promise<TokenRecord[]> {
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT class_id, scope, assessment_key, value_token, updated_at
-       FROM class_user_marks
-      WHERE user_key = $1
-      ORDER BY class_id, scope, assessment_key`,
-    [ownerKey]
-  );
-  return rows.map(
-    (r: {
-      class_id: string;
-      scope: Scope;
-      assessment_key: string;
-      value_token: string;
-      updated_at: number;
-    }) => ({
-      classId: r.class_id,
-      scope: r.scope,
-      assessmentKey: r.assessment_key,
-      token: r.value_token,
-      updatedAt: Number(r.updated_at),
-    })
-  );
-}
-
-/**
- * Old-scheme classes this login plausibly contributed to.
- *
- * `user_hash` is kept in the flow only as a lookup hint, never as identity: the caller
- * proves who they are through the VTOP session, and the login ID is accepted as
- * belonging to them only when it matches the verified register number. The legacy
- * lookup then uses server-derived case variants, so a caller can only ever retrieve
- * their *own* associations — never anyone else's.
- *
- * Returned rows carry no tokens (none were ever minted for them) and no values, just
- * the class ids, so the client can label those cohorts as legacy-held.
- */
-export async function legacyAssociations(
-  authorizedID: string,
-  regNo: string
-): Promise<string[]> {
-  const id = authorizedID.trim();
-  if (!id || id.toUpperCase() !== regNo.trim().toUpperCase()) return [];
-
-  const pool = getDbPool();
-  const variants = Array.from(new Set([id, id.toUpperCase(), id.toLowerCase()]));
-  const { rows } = await pool.query(
-    `SELECT DISTINCT class_id FROM class_user_hashes_legacy
-      WHERE user_hash = ANY($1)`,
-    [await Promise.all(variants.map(sha256hex))]
-  );
-  return rows.map((r: { class_id: string }) => r.class_id);
+  return { zeroed };
 }
 
 /* ── read path ────────────────────────────────────────────────────────────── */
@@ -511,22 +547,6 @@ export type ClassStats = {
   assessments: Record<string, { count: number; mean: number; sd: number }>;
 };
 
-/**
- * Statistics for a set of classes.
- *
- * ## The caller does not get to choose this set
- *
- * The route resolves the list from the caller's own VTOP session before calling here, so
- * there is nothing to authorise — the cookie is the proof. An earlier version derived the
- * list from the caller's rows in `class_user_marks` instead, which was airtight but had a
- * fatal cold start: that table is empty until a student syncs through the new path, and the
- * 1,918 classes contributed through the *old* path could never be reconstructed, because
- * the old identity was an unsalted browser hash of a login id and this one is an HMAC of a
- * register number. Every class read back as empty until every student happened to re-sync.
- *
- * Asking VTOP what this session may see costs the same one round trip the identity check
- * did, has no gap, and cannot be steered by the caller.
- */
 export async function statsForClasses(
   classIds: string[]
 ): Promise<Record<string, ClassStats>> {
@@ -538,12 +558,12 @@ export async function statsForClasses(
   const [overallRes, assessmentRes] = await Promise.all([
     pool.query(
       `SELECT class_id, count, mean, m2 FROM class_overall_stats WHERE class_id = ANY($1)`,
-      [unique]
+      [unique],
     ),
     pool.query(
       `SELECT class_id, assessment_key, count, mean, m2
          FROM class_assessment_stats WHERE class_id = ANY($1)`,
-      [unique]
+      [unique],
     ),
   ]);
 
@@ -583,4 +603,87 @@ function toAcc(row: Record<string, unknown>): Acc {
     mean: Number(row.mean),
     m2: Number(row.m2),
   };
+}
+
+/* ── enrollment ───────────────────────────────────────────────────────────── */
+
+/**
+ * Record which classes a student is enrolled in. Written from the class list
+ * that the attendance/marks fetch returned — trustworthy because it came
+ * from VTOP under the caller's own cookies.
+ */
+export async function recordEnrollment(
+  ownerKey: string,
+  classIds: string[],
+  now: number,
+): Promise<void> {
+  if (classIds.length === 0) return;
+  const pool = getDbPool();
+  await pool.query(
+    `INSERT INTO class_enrollment (owner_key, class_id, updated_at)
+     SELECT $1, c, $2
+       FROM unnest($3::text[]) AS c
+     ON CONFLICT (owner_key, class_id)
+     DO UPDATE SET updated_at = EXCLUDED.updated_at`,
+    [ownerKey, now, classIds],
+  );
+}
+
+/**
+ * Narrow a caller-supplied class list to the ones they are enrolled in.
+ * The caller cannot enumerate cohorts they don't belong to.
+ */
+export async function enrolledSubset(
+  ownerKey: string,
+  classIds: string[]
+): Promise<string[]> {
+  if (classIds.length === 0) return [];
+  const pool = getDbPool();
+  const { rows } = await pool.query(
+    `SELECT class_id FROM class_enrollment
+      WHERE owner_key = $1 AND class_id = ANY($2)`,
+    [ownerKey, classIds],
+  );
+  return rows.map((r: { class_id: string }) => r.class_id);
+}
+
+/**
+ * Every mark hash the server currently holds for this student.
+ * Presence and continuity only — never values. Used by the client to
+ * verify its local prevMark cache matches server state.
+ */
+export type TokenRecord = {
+  classId: string;
+  scope: Scope;
+  assessmentKey: string;
+  token: string;
+  updatedAt: number;
+};
+
+export async function tokensForOwner(
+  ownerKey: string,
+): Promise<TokenRecord[]> {
+  const pool = getDbPool();
+  const { rows } = await pool.query(
+    `SELECT class_id, scope, assessment_key, value_token, updated_at
+       FROM class_user_marks
+      WHERE user_key = $1
+      ORDER BY class_id, scope, assessment_key`,
+    [ownerKey],
+  );
+  return rows.map(
+    (r: {
+      class_id: string;
+      scope: Scope;
+      assessment_key: string;
+      value_token: string;
+      updated_at: number;
+    }) => ({
+      classId: r.class_id,
+      scope: r.scope,
+      assessmentKey: r.assessment_key,
+      token: r.value_token,
+      updatedAt: Number(r.updated_at),
+    }),
+  );
 }
