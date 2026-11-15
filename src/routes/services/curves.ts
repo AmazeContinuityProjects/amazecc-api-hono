@@ -207,7 +207,6 @@ curvesRouter.post("/", async (c) => {
     const classmates = classmateRows.map((r: any) => ({
       reg_no: r.register_no,
       display_name: r.display_name || null,
-      handle: r.handle || null,
     }));
 
     return c.json(

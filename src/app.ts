@@ -13,6 +13,7 @@ import { servicesRouter } from "./routes/services";
 import { adminRouter } from "./routes/admin";
 import { qbankRouter } from "./routes/qbank";
 import { clubAdminRouter } from "./routes/club-admin";
+import { guardRequest } from "./lib/guard";
 import { publicErrorMessage } from "./lib/publicError";
 
 export const app = new Hono();
@@ -51,6 +52,14 @@ app.get("/", (c) =>
 );
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.get("/api/status", (c) => c.json({ text: "API is working" }));
+
+// First-party service guard - runs before routers/proxy.
+// Anonymous → 401; section RBAC where it applies.
+app.use("/api/*", async (c, next) => {
+  const blocked = await guardRequest(c.req.raw);
+  if (blocked) return blocked;
+  await next();
+});
 
 app.route("/api/remote", remoteRouter);
 // Legacy alias: /api/login, /api/attendance, ... — same handlers as /api/remote/*.
