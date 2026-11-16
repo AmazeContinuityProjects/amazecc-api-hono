@@ -16,6 +16,7 @@ import {
   FFCS_CLASSES_TABLE,
   FFCS_CLASS_REGISTRATIONS_TABLE,
   generateHandle,
+  migrateLegacyOwnerKeyForRegister,
   regKey,
 } from "../../../../src/lib/social";
 import { getDbPool } from "../../../../src/lib/db";
@@ -421,6 +422,7 @@ socialFfcsMatchRouter.post("/ffcs-match", async (c) => {
       return c.json({ success: false, error: resolution.error, detail: resolution.detail }, resolution.status as any);
     }
     const caller = resolution.caller;
+    await migrateLegacyOwnerKeyForRegister(caller.regNo);
     await upsertStudentProfile(caller.regNo, {
       display_name: caller.displayName,
       semester_id: semesterId,

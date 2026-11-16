@@ -4,7 +4,7 @@
  * Auth: Amaze ID (DPoP).
  */
 import { Hono } from "hono";
-import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_HUBS_TABLE, CABSHARE_TABLE, CABSHARE_MATCH_EVENTS_TABLE, cabshareUserIdFromOwnerKey } from "../../../../src/lib/cabshare";
+import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_HUBS_TABLE, CABSHARE_TABLE, CABSHARE_MATCH_EVENTS_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import { getDbPool } from "../../../../src/lib/db";
 

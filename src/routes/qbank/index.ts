@@ -12,11 +12,18 @@ import * as publish from "./publish";
 import * as reject from "./reject";
 import * as importToStorage from "./import-to-storage";
 import * as papersDownload from "./papers-download";
+import * as publicRoutes from "./public";
 
 export const qbankRouter = new Hono();
 
 /** Fabricate the Next-style context object some handlers expect. */
 const ctx = <T extends Record<string, string>>(params: T) => ({ params: Promise.resolve(params) });
+
+// public catalogue; upload is student-facing but requires Amaze ID via guard
+qbankRouter.get("/courses", () => publicRoutes.courses());
+qbankRouter.get("/papers", (c) => publicRoutes.papers(c.req.raw));
+qbankRouter.get("/questions", (c) => publicRoutes.questions(c.req.raw));
+qbankRouter.post("/upload", (c) => publicRoutes.upload(c.req.raw));
 
 // admin CRUD
 qbankRouter.get("/admin/questions", (c) => questions.GET(c.req.raw));

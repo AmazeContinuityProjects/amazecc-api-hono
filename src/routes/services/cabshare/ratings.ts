@@ -6,7 +6,7 @@
  * Auth: Amaze ID (DPoP). Only trip owner + accepted requester can rate each other.
  */
 import { Hono } from "hono";
-import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_MATCH_EVENTS_TABLE, CABSHARE_RATINGS_TABLE, cabshareUserIdFromOwnerKey } from "../../../../src/lib/cabshare";
+import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_MATCH_EVENTS_TABLE, CABSHARE_RATINGS_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import { getDbPool } from "../../../../src/lib/db";
 

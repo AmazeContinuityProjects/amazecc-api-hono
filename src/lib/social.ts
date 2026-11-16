@@ -15,7 +15,7 @@ import { parseStudentProfile } from "./parsers/student-profile";
 import { getDbPool } from "./db";
 import { publicErrorMessage } from "./publicError";
 import { upsertStudentProfile, getStudentProfileByRegNo } from "./student-profiles";
-import { hash } from "./generator";
+import { hash, identityHash, normalizeRegisterNo } from "./generator";
 
 export const SOCIAL_TABLE = "social_grants";
 export const TIMETABLE_TABLE = "social_timetables";
@@ -43,7 +43,7 @@ const HANDLE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /** Deterministic handle from reg_no via GENERATOR_KEY. */
 export function generateHandle(regNo: string): string {
-  const h = hash(`handle::${regNo.trim().toUpperCase()}`);
+  const h = hash(`handle::${normalizeRegisterNo(regNo)}`);
   let out = "";
   for (let i = 0; i < 8; i++) {
     const digit = parseInt(h.slice(i * 2, i * 2 + 2), 16);
@@ -52,9 +52,9 @@ export function generateHandle(regNo: string): string {
   return `AMZ-${out.slice(0, 4)}-${out.slice(4, 8)}`;
 }
 
-/** Identity key = reg_no itself (plaintext, no masking). */
+/** Canonical pseudonymous identity key shared across Hono services. */
 export function regKey(regNo: string): string {
-  return regNo.trim().toUpperCase();
+  return identityHash(regNo);
 }
 
 /**
@@ -251,6 +251,153 @@ export async function ensureSocialSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS ffcs_class_registrations_sem_class_idx
       ON ${FFCS_CLASS_REGISTRATIONS_TABLE} (semester_id, class_id);
   `);
+
+}
+
+/**
+ * Move one verified student's old plaintext owner key to identityHash(reg_no).
+ * Keep this out of ensureSocialSchema: scanning every social table during schema
+ * initialization makes normal requests scale with the entire user base.
+ */
+export async function migrateLegacyOwnerKeyForRegister(regNo: string): Promise<void> {
+  const normalized = normalizeRegisterNo(regNo);
+  if (!normalized) return;
+  const newKey = identityHash(normalized);
+  const client = await getDbPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+      [`canonical_register_owner_key:${newKey}`],
+    );
+
+    const sources = [
+      { table: "social_people", registerColumn: "register_no" },
+      { table: TIMETABLE_TABLE, registerColumn: "register_no" },
+      { table: FFCS_MATCH_TABLE, registerColumn: "register_no" },
+      { table: FFCS_CLASS_REGISTRATIONS_TABLE, registerColumn: "register_no" },
+    ] as const;
+    const tables = new Set<string>();
+    const oldKeys = new Set<string>([normalized]);
+
+    for (const source of sources) {
+      const exists = await client.query<{ table_name: string | null }>(
+        "SELECT to_regclass($1)::text AS table_name",
+        [source.table],
+      );
+      if (!exists.rows[0]?.table_name) continue;
+      tables.add(source.table);
+      const { rows } = await client.query<{ owner_key: string | null }>(
+        `SELECT DISTINCT owner_key FROM ${source.table}
+          WHERE UPPER(${source.registerColumn}) = $1 AND owner_key <> $2`,
+        [normalized, newKey],
+      );
+      for (const row of rows) if (row.owner_key) oldKeys.add(row.owner_key);
+    }
+
+    for (const table of ["social_grants", "service_enrollments"] as const) {
+      const exists = await client.query<{ table_name: string | null }>(
+        "SELECT to_regclass($1)::text AS table_name",
+        [table],
+      );
+      if (exists.rows[0]?.table_name) tables.add(table);
+    }
+
+    for (const oldKey of oldKeys) {
+      if (!oldKey || oldKey === newKey) continue;
+      if (tables.has("social_people")) {
+        // A canonical profile may already exist (e.g. after a prior sign-in
+        // created it). Keep that row and discard only the duplicate old key.
+        await client.query(
+          `DELETE FROM social_people AS old
+            WHERE old.owner_key = $1
+              AND EXISTS (SELECT 1 FROM social_people AS current WHERE current.owner_key = $2)`,
+          [oldKey, newKey],
+        );
+        await client.query("UPDATE social_people SET owner_key = $2 WHERE owner_key = $1", [oldKey, newKey]);
+      }
+      if (tables.has(TIMETABLE_TABLE)) {
+        await client.query(
+          `DELETE FROM ${TIMETABLE_TABLE} AS old
+            WHERE old.owner_key = $1
+              AND EXISTS (
+                SELECT 1 FROM ${TIMETABLE_TABLE} AS current
+                 WHERE current.owner_key = $2 AND current.semester_id = old.semester_id
+              )`,
+          [oldKey, newKey],
+        );
+        await client.query(`UPDATE ${TIMETABLE_TABLE} SET owner_key = $2 WHERE owner_key = $1`, [oldKey, newKey]);
+      }
+      if (tables.has(FFCS_MATCH_TABLE)) {
+        await client.query(
+          `UPDATE ${FFCS_MATCH_TABLE} AS current
+              SET class_ids = ARRAY(
+                    SELECT DISTINCT merged.class_id
+                      FROM UNNEST(current.class_ids || old.class_ids) AS merged(class_id)
+                  ),
+                  discoverable = current.discoverable OR old.discoverable,
+                  updated_at = GREATEST(current.updated_at, old.updated_at)
+             FROM ${FFCS_MATCH_TABLE} AS old
+            WHERE current.owner_key = $2 AND old.owner_key = $1
+              AND current.semester_id = old.semester_id`,
+          [oldKey, newKey],
+        );
+        await client.query(
+          `DELETE FROM ${FFCS_MATCH_TABLE} AS old
+            WHERE old.owner_key = $1
+              AND EXISTS (
+                SELECT 1 FROM ${FFCS_MATCH_TABLE} AS current
+                 WHERE current.owner_key = $2 AND current.semester_id = old.semester_id
+              )`,
+          [oldKey, newKey],
+        );
+        await client.query(`UPDATE ${FFCS_MATCH_TABLE} SET owner_key = $2 WHERE owner_key = $1`, [oldKey, newKey]);
+      }
+      if (tables.has(FFCS_CLASS_REGISTRATIONS_TABLE)) {
+        await client.query(
+          `UPDATE ${FFCS_CLASS_REGISTRATIONS_TABLE} SET owner_key = $2 WHERE owner_key = $1`,
+          [oldKey, newKey],
+        );
+      }
+      if (tables.has("social_grants")) {
+        // Keep an already-canonical grant if both old and canonical identity
+        // rows represent the same pair; otherwise the pair's unique index
+        // rejects the re-key.
+        await client.query(
+          `DELETE FROM social_grants AS old
+            WHERE (old.owner_a = $1 OR old.owner_b = $1)
+              AND EXISTS (
+                SELECT 1 FROM social_grants AS current
+                 WHERE current.grant_id <> old.grant_id
+                   AND current.owner_a = CASE WHEN old.owner_a = $1 THEN $2 ELSE old.owner_a END
+                   AND current.owner_b = CASE WHEN old.owner_b = $1 THEN $2 ELSE old.owner_b END
+              )`,
+          [oldKey, newKey],
+        );
+        await client.query("UPDATE social_grants SET owner_a = $2 WHERE owner_a = $1", [oldKey, newKey]);
+        await client.query("UPDATE social_grants SET owner_b = $2 WHERE owner_b = $1", [oldKey, newKey]);
+      }
+      if (tables.has("service_enrollments")) {
+        await client.query(
+          `DELETE FROM service_enrollments AS old
+            WHERE old.owner_key = $1
+              AND EXISTS (
+                SELECT 1 FROM service_enrollments AS current
+                 WHERE current.owner_key = $2 AND current.service = old.service
+              )`,
+          [oldKey, newKey],
+        );
+        await client.query("UPDATE service_enrollments SET owner_key = $2 WHERE owner_key = $1", [oldKey, newKey]);
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    await client.release();
+  }
 }
 
 export type SocialCourse = {

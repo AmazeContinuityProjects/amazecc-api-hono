@@ -311,6 +311,7 @@ attendanceRoute.post("/attendance", async (c) => {
     // reg_no. Create a partial student_profiles row if one doesn't exist yet.
     try {
       const regNo = String(authorizedID).trim().toUpperCase();
+      const ownerKey = await ownerKeyFor(regNo);
       const semester = String(semesterId ?? "");
 
       // Ensure a partial Amaze ID account exists for this reg number.
@@ -408,7 +409,7 @@ attendanceRoute.post("/attendance", async (c) => {
             regNo,
             "", // display_name - filled when student claims Amaze ID
             "", // handle - filled when student claims Amaze ID
-            regNo, // owner_key - reg_no itself until claimed
+            ownerKey, // canonical HMAC of the normalized register number
             true, // discoverable
           ]
         );

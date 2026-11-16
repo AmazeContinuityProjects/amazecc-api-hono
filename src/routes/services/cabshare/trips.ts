@@ -5,7 +5,7 @@
  * Auth: Amaze ID (DPoP).
  */
 import { Hono } from "hono";
-import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_HUBS_TABLE, CABSHARE_TABLE, cabshareUserIdFromOwnerKey } from "../../../../src/lib/cabshare";
+import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_HUBS_TABLE, CABSHARE_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import { getDbPool } from "../../../../src/lib/db";
 
@@ -97,7 +97,8 @@ cabshareTripsRouter.get("/trips", async (c) => {
       JOIN ${CABSHARE_TABLE} u ON t.user_id = u.user_id
       JOIN ${CABSHARE_HUBS_TABLE} h ON t.hub_id = h.hub_id
       WHERE t.status = 'active' AND t.user_id <> $1`;
-    const params: any[] = [await cabshareUserIdFromOwnerKey(regNo)];
+    const user = await ensureCabshareUser(regNo);
+    const params: any[] = [user.user_id];
 
     let paramIdx = 2;
     if (hubId) {

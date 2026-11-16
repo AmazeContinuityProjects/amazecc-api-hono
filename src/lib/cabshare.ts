@@ -5,9 +5,9 @@
  *   - Request carries Authorization: DPoP <token>
    *   - verifyAmazeSession → D1 users.sub → student_profiles.amaze_sub → reg_no
    *   - User must have an Amaze ID linked to a VTOP reg_no to access cabshare
-   *   - cabshare_users gets an owner_key column (= regKey(reg_no) = reg_no uppercase)
+ *   - cabshare_users gets an owner_key column (= identityHash(reg_no))
  *
- * All cabshare operations are keyed by reg_no (owner_key) instead of the
+ * All cabshare operations use the shared keyed register-number identity instead of the
  * legacy cabshare user_id serial.
  */
 import { Hono } from "hono";
@@ -168,8 +168,9 @@ export async function ensureCabshareUser(
   regNo: string,
 ): Promise<CabshareUser> {
   const pool = getDbPool();
-  const ownerKey = regKey(regNo);
-  const profile = await getStudentProfileByRegNo(regNo);
+  const canonicalRegNo = regNo.trim().toUpperCase();
+  const ownerKey = regKey(canonicalRegNo);
+  const profile = await getStudentProfileByRegNo(canonicalRegNo);
 
   const refreshExisting = async (userId: number): Promise<CabshareUser> => {
     const { rows } = await pool.query(
@@ -194,33 +195,20 @@ export async function ensureCabshareUser(
 
   // Try existing row by reg_number (legacy migration)
   result = await pool.query(
-    `SELECT * FROM ${CABSHARE_TABLE} WHERE reg_number = $1 LIMIT 1`,
-    [regNo],
+    `SELECT * FROM ${CABSHARE_TABLE} WHERE UPPER(reg_number) = $1 LIMIT 1`,
+    [canonicalRegNo],
   );
   if (result.rows.length) return refreshExisting(Number(result.rows[0].user_id));
 
   // Create new row — we only have reg_no; name/phone come from student_profiles
-  const name = profile?.display_name || regNo;
+  const name = profile?.display_name || canonicalRegNo;
   const phone = profile?.phone_number || null;
 
   const { rows: inserted } = await pool.query(
     `INSERT INTO ${CABSHARE_TABLE} (name, phone_number, reg_number, owner_key)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [name, phone, regNo, ownerKey],
+    [name, phone, canonicalRegNo, ownerKey],
   );
   return inserted[0] as CabshareUser;
-}
-
-/** Resolve cabshare user_id from owner_key. */
-export async function cabshareUserIdFromOwnerKey(
-  ownerKey: string,
-): Promise<number | null> {
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT user_id FROM ${CABSHARE_TABLE} WHERE owner_key = $1 LIMIT 1`,
-    [ownerKey],
-  );
-  if (!rows.length) return null;
-  return Number(rows[0].user_id);
 }

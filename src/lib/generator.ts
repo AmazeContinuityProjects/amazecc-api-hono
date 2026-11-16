@@ -43,6 +43,11 @@ export function hashMark(mark: number): string {
   return hash(`mk::${mark.toFixed(6)}`);
 }
 
+/** Canonical VTOP identity input shared by every register-number hash. */
+export function normalizeRegisterNo(regNo: string): string {
+  return regNo.trim().toUpperCase();
+}
+
 /**
  * RegNo-based identity hash: the stable pseudonym for a student, derived
  * from their VTOP register number. No masking, no truncation — reg_no is
@@ -50,7 +55,7 @@ export function hashMark(mark: number): string {
  * fixed-length identifier is needed (e.g. class_user_marks.user_key).
  */
 export function identityHash(regNo: string): string {
-  return hash(`id::${regNo.trim().toUpperCase()}`);
+  return hash(`id::${normalizeRegisterNo(regNo)}`);
 }
 
 /**
