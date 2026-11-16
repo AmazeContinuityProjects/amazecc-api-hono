@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import { vtopPostForm, readText, cookieHeader, formParams } from "../../lib/vtop";
 import { parseStudentProfile } from "../../lib/parsers/student-profile";
 import { getClientIp, checkRateLimit, rateLimitResponse } from "../../lib/rateLimit";
-import { getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
 import {
   ensureSchema,
   ownerKeyFor,

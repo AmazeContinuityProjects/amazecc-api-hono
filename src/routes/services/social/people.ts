@@ -6,8 +6,8 @@
  */
 import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { identifyCaller, ensureSocialSchema, regKey } from "../../../../src/lib/social";
-import { getDbPool } from "../../../../src/lib/db";
+import { identifyCaller } from "../../../../src/lib/social";
+import { ensureSocialInD1 } from "../../../../src/lib/socialD1";
 
 export const socialPeopleRouter = new Hono();
 
@@ -34,29 +34,26 @@ socialPeopleRouter.post("/people", async (c) => {
         { success: false, error: "invalid_handle_format", detail: { detail: "Handle must match AMZ-XXXX-XXXX" } }, 400);
     }
 
-    await ensureSocialSchema();
-    const pool = getDbPool();
+    const db = await ensureSocialInD1();
+    const person = await db.prepare(`SELECT p.handle, p.display_name,
+            (SELECT COUNT(*) FROM social_grants g
+              WHERE (g.owner_a = p.owner_key OR g.owner_b = p.owner_key) AND g.revoked_at IS NULL) AS grant_count
+          FROM social_people p WHERE p.handle = ? OR EXISTS (
+            SELECT 1 FROM social_handle_aliases a WHERE a.handle = ?
+              AND a.register_no = UPPER(TRIM(p.register_no))) LIMIT 1`)
+      .bind(body.handle.trim().toUpperCase(), body.handle.trim().toUpperCase())
+      .first<{ handle: string; display_name: string | null; grant_count: number }>();
 
-    const { rows } = await pool.query(
-      `SELECT p.handle, p.display_name,
-              (SELECT COUNT(*) FROM social_grants g
-               WHERE (g.owner_a = p.owner_key OR g.owner_b = p.owner_key)
-                 AND g.revoked_at IS NULL) AS grant_count
-         FROM social_people p
-         WHERE p.handle = $1`,
-      [body.handle.trim().toUpperCase()],
-    );
-
-    if (!rows.length) {
+    if (!person) {
       return c.json({ success: false, error: "handle_not_found" }, 404);
     }
 
     return c.json({
       success: true,
       person: {
-        handle: rows[0].handle,
-        displayName: rows[0].display_name || null,
-        alreadyPaired: Number(rows[0].grant_count) > 0,
+        handle: person.handle,
+        displayName: person.display_name || null,
+        alreadyPaired: Number(person.grant_count) > 0,
       },
     });
   } catch (err: unknown) {

@@ -94,10 +94,8 @@
  * ========================================================================
  */
 
-import type { DbClient } from "./db";
-import { getDbPool } from "./db";
+import { getWorkerEnv } from "../env";
 import { assessmentKey as genAssessmentKey, hashMark, identityHash } from "./generator";
-import { migrateStudentMarksTable } from "./student-marks";
 
 export type Scope = "overall" | "assessment";
 
@@ -153,61 +151,37 @@ export async function valueToken(mark: number): Promise<string> {
   return hashMark(mark);
 }
 
+/** Store the authenticated register number beside any existing keyed mark rows. */
+export async function setStudentRegisterNumberD1(ownerKey: string, regNo: string): Promise<void> {
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  const normalized = regNo.trim().toUpperCase();
+  if (!normalized) return;
+  await db.prepare(`UPDATE class_user_marks SET reg_no = ?
+    WHERE user_key = ? AND (reg_no IS NULL OR reg_no = ?)`)
+    .bind(normalized, ownerKey, normalized).run();
+}
+
 /* ── schema ───────────────────────────────────────────────────────────────── */
 
 let schemaEnsured: Promise<void> | null = null;
 
-/**
- * Inline DDL (house style — no migrations directory).
- *
- * class_user_marks holds the keyed mark hash per student per assessment.
- */
+async function requireMarksDb(): Promise<D1Database> {
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  return db;
+}
+
+/** Require the service-data D1 binding; migrations own the marks schema. */
 export function ensureSchema(): Promise<void> {
   if (!schemaEnsured) {
-    schemaEnsured = (async () => {
-      const pool = getDbPool();
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS class_overall_stats (
-          class_id TEXT PRIMARY KEY,
-          count    BIGINT NOT NULL,
-          mean     DOUBLE PRECISION NOT NULL,
-          m2       DOUBLE PRECISION NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS class_assessment_stats (
-          class_id       TEXT NOT NULL,
-          assessment_key TEXT NOT NULL,
-          count          BIGINT NOT NULL,
-          mean           DOUBLE PRECISION NOT NULL,
-          m2             DOUBLE PRECISION NOT NULL,
-          PRIMARY KEY (class_id, assessment_key)
-        );
-        CREATE TABLE IF NOT EXISTS class_assessment_metadata (
-          class_id       TEXT NOT NULL,
-          assessment_key TEXT NOT NULL,
-          component      TEXT NOT NULL,
-          title          TEXT NOT NULL,
-          PRIMARY KEY (class_id, assessment_key)
-        );
-        CREATE TABLE IF NOT EXISTS class_user_marks (
-          class_id       TEXT NOT NULL,
-          user_key       TEXT NOT NULL,
-          scope          TEXT NOT NULL,
-          assessment_key TEXT NOT NULL,
-          value_token    TEXT NOT NULL,
-          updated_at     BIGINT NOT NULL,
-          PRIMARY KEY (class_id, user_key, scope, assessment_key)
-        );
-      `);
-      await migrateStudentMarksTable();
-    })().catch((err: unknown) => {
+    schemaEnsured = requireMarksDb().then(() => undefined).catch((error) => {
       schemaEnsured = null;
-      throw err;
+      throw error;
     });
   }
   return schemaEnsured;
 }
-
-/* ── Welford, with the negative-variance guard ────────────────────────────── */
 
 type Acc = { count: number; mean: number; m2: number };
 
@@ -283,6 +257,8 @@ export type Contribution = {
   prevMark?: number | null;
   /** Current VTOP snapshot; unchanged values are skipped and changed values reset only their own scope before re-adding this snapshot. */
   serverObserved?: boolean;
+  /** Plain register number observed from the authenticated VTOP session. */
+  regNo?: string;
 };
 
 export type ContributionResult = {
@@ -308,135 +284,66 @@ export type ContributionResult = {
  *
  * Exact Welford lines used (see addTo / removeFrom above).
  */
-export async function recordContribution(
-  client: DbClient,
+/** Atomic, idempotent VTOP snapshot ingestion using a single D1 batch. */
+export async function recordObservedContributionD1(
   ownerKey: string,
+  regNo: string,
   c: Contribution,
   now: number,
 ): Promise<ContributionResult> {
-  if (
-    !c.classId ||
-    typeof c.classId !== "string" ||
-    !Number.isFinite(c.mark) ||
-    c.mark < MARK_MIN ||
-    c.mark > MARK_MAX
-  ) {
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  if (!c.classId || typeof c.classId !== "string" || !Number.isFinite(c.mark)
+      || c.mark < MARK_MIN || c.mark > MARK_MAX) {
     return { outcome: "rejected", recountTriggered: false };
   }
-
   const isOverall = c.scope === "overall";
   const component = c.component?.trim().toLowerCase() ?? "";
   const title = c.title?.trim().replace(/\s+/g, " ") ?? "";
-  if (!isOverall && (!component || !title)) {
-    return { outcome: "rejected", recountTriggered: false };
-  }
-  const assessmentKey = isOverall
-    ? OVERALL_KEY
-    : await genAssessmentKey(c.classId, component, title);
-
-  if (c.serverObserved) {
-    await client.query(
-      `SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`,
-      [`${c.classId}::${c.scope}::${assessmentKey}`],
-    );
-  }
-
-  if (!isOverall) {
-    await client.query(
-      `INSERT INTO class_assessment_metadata (class_id, assessment_key, component, title)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (class_id, assessment_key)
-       DO UPDATE SET component = EXCLUDED.component, title = EXCLUDED.title`,
-      [c.classId, assessmentKey, component, title],
-    );
-  }
-
-  // ── STEP 1: Look up the stored hash for this student/assessment ──
-  const { rows } = await client.query(
-    `SELECT value_token FROM class_user_marks
-      WHERE class_id = $1 AND user_key = $2 AND scope = $3 AND assessment_key = $4`,
-    [c.classId, ownerKey, c.scope, assessmentKey],
-  );
-  const storedToken = rows[0]?.value_token as string | undefined;
-
-  // ── STEP 2: Decide outcome ──
-  let recountTriggered = false;
-  if (storedToken) {
-    if (c.serverObserved) {
-      const currentHash = await valueToken(c.mark);
-      if (currentHash === storedToken) {
-        return { outcome: "skipped", recountTriggered: false };
-      }
-      await triggerRecount(client, c.classId, c.scope, assessmentKey);
-      recountTriggered = true;
-    } else {
-      // We have a prior contribution. The client must prove they know the
-      // previous mark by hashing it and matching our stored token.
-      const prev = c.prevMark;
-      if (prev == null || !Number.isFinite(prev)) {
-        // No prevMark, or invalid — we can't safely remove the old mark.
-        // Hash mismatch → recount.
-        await triggerRecount(client, c.classId, c.scope, assessmentKey);
-        return { outcome: "recounted", recountTriggered: true };
-      }
-      const prevHash = await valueToken(prev);
-      if (prevHash !== storedToken) {
-        // The client's claimed prevMark doesn't match what we stored.
-        // Either the key rotated, the data is corrupt, or the client is
-        // submitting a forged prevMark. Recount to be safe.
-        await triggerRecount(client, c.classId, c.scope, assessmentKey);
-        return { outcome: "recounted", recountTriggered: true };
-      }
-      // Hash matches → safe to remove the old mark, then add the new one.
-      await removeFromAccumulator(client, c.classId, c.scope, assessmentKey, prev);
-    }
-  }
-  // No stored token, or an authoritative snapshot after recount → add.
-
-  // ── STEP 3: Update the Welford accumulator ──
+  if (!isOverall && (!component || !title)) return { outcome: "rejected", recountTriggered: false };
+  const assessmentKey = isOverall ? OVERALL_KEY : await genAssessmentKey(c.classId, component, title);
   const table = isOverall ? "class_overall_stats" : "class_assessment_stats";
-  const keyCols = isOverall ? "class_id" : "class_id, assessment_key";
-  const whereClause = isOverall ? "class_id = $1" : "class_id = $1 AND assessment_key = $2";
-  const insertCols = isOverall ? "$1" : "$1, $2";
-  const keyValues = isOverall ? [c.classId] : [c.classId, assessmentKey];
+  const keys = isOverall ? [c.classId] : [c.classId, assessmentKey];
+  const where = isOverall ? "class_id = ?" : "class_id = ? AND assessment_key = ?";
+  const token = await valueToken(c.mark);
+  const statements: D1PreparedStatement[] = [];
+  if (!isOverall) {
+    statements.push(db.prepare(`INSERT INTO class_assessment_metadata (class_id, assessment_key, component, title)
+      VALUES (?, ?, ?, ?) ON CONFLICT (class_id, assessment_key)
+      DO UPDATE SET component = excluded.component, title = excluded.title`)
+      .bind(c.classId, assessmentKey, component, title));
+  }
+  statements.push(db.prepare(`DELETE FROM class_user_marks
+    WHERE class_id = ? AND scope = ? AND assessment_key = ?
+      AND EXISTS (SELECT 1 FROM class_user_marks mine
+        WHERE mine.class_id = ? AND mine.user_key = ? AND mine.scope = ?
+          AND mine.assessment_key = ? AND mine.value_token <> ?)`)
+    .bind(c.classId, c.scope, assessmentKey, c.classId, ownerKey, c.scope, assessmentKey, token));
+  statements.push(db.prepare(`UPDATE ${table} SET count = 0, mean = 0, m2 = 0 WHERE ${where} AND changes() = 1`)
+    .bind(...keys));
+  statements.push(db.prepare(`INSERT OR IGNORE INTO class_user_marks
+    (class_id, user_key, scope, assessment_key, value_token, updated_at, reg_no) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .bind(c.classId, ownerKey, c.scope, assessmentKey, token, now, regNo.trim().toUpperCase()));
+  const statColumns = isOverall ? "class_id, count, mean, m2" : "class_id, assessment_key, count, mean, m2";
+  const statValues = isOverall ? "?, 1, ?, 0" : "?, ?, 1, ?, 0";
+  const conflictKeys = isOverall ? "class_id" : "class_id, assessment_key";
+  statements.push(db.prepare(`INSERT INTO ${table} (${statColumns})
+      SELECT ${statValues} WHERE changes() = 1
+    ON CONFLICT (${conflictKeys}) DO UPDATE SET
+      count = ${table}.count + 1,
+      mean = ${table}.mean + (? - ${table}.mean) / (${table}.count + 1),
+      m2 = ${table}.m2 + (? - ${table}.mean) * (? - (${table}.mean + (? - ${table}.mean) / (${table}.count + 1)))`)
+    .bind(...(isOverall ? [c.classId, c.mark] : [c.classId, assessmentKey, c.mark]),
+      c.mark, c.mark, c.mark, c.mark));
 
-  const cur = await client.query(
-    `SELECT count, mean, m2 FROM ${table} WHERE ${whereClause}`,
-    keyValues,
-  );
-  let acc: Acc = cur.rows.length
-    ? {
-        count: Number(cur.rows[0].count),
-        mean: Number(cur.rows[0].mean),
-        m2: Number(cur.rows[0].m2),
-      }
-    : ZERO;
-
-  // If we removed a prevMark above, acc already reflects the removal.
-  // Otherwise acc is the raw current state. Add the new mark:
-  acc = addTo(acc, c.mark);
-
-  await client.query(
-    `INSERT INTO ${table} (${keyCols}, count, mean, m2)
-     VALUES (${insertCols}, $${keyValues.length + 1}, $${keyValues.length + 2}, $${keyValues.length + 3})
-     ON CONFLICT (${keyCols})
-     DO UPDATE SET count = EXCLUDED.count, mean = EXCLUDED.mean, m2 = EXCLUDED.m2`,
-    [...keyValues, acc.count, acc.mean, acc.m2],
-  );
-
-  // ── STEP 4: Store the new hash ──
-  const newToken = await valueToken(c.mark);
-  await client.query(
-    `INSERT INTO class_user_marks (class_id, user_key, scope, assessment_key, value_token, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (class_id, user_key, scope, assessment_key)
-     DO UPDATE SET value_token = EXCLUDED.value_token, updated_at = EXCLUDED.updated_at`,
-    [c.classId, ownerKey, c.scope, assessmentKey, newToken, now],
-  );
-
+  const results = await db.batch(statements);
+  const deleteIndex = isOverall ? 0 : 1;
+  const insertIndex = deleteIndex + 2;
+  const deleted = Number(results[deleteIndex]?.meta.changes ?? 0) > 0;
+  const inserted = Number(results[insertIndex]?.meta.changes ?? 0) > 0;
   return {
-    outcome: recountTriggered ? "recounted" : storedToken ? "replaced" : "added",
-    recountTriggered,
+    outcome: deleted ? "recounted" : inserted ? "added" : "skipped",
+    recountTriggered: deleted,
   };
 }
 
@@ -444,107 +351,26 @@ export async function recordContribution(
  * Remove a mark from the Welford accumulator. Used when replacing a
  * student's contribution (prevMark verified by hash match).
  */
-async function removeFromAccumulator(
-  client: DbClient,
-  classId: string,
-  scope: Scope,
-  assessmentKey: string,
-  prevMark: number,
-): Promise<void> {
-  const table = scope === "overall" ? "class_overall_stats" : "class_assessment_stats";
-  const keyCols = scope === "overall" ? "class_id" : "class_id, assessment_key";
-  const whereClause = scope === "overall" ? "class_id = $1" : "class_id = $1 AND assessment_key = $2";
-  const keyValues = scope === "overall" ? [classId] : [classId, assessmentKey];
-
-  const cur = await client.query(
-    `SELECT count, mean, m2 FROM ${table} WHERE ${whereClause}`,
-    keyValues,
-  );
-  if (!cur.rows.length) return; // nothing to remove
-
-  let acc: Acc = {
-    count: Number(cur.rows[0].count),
-    mean: Number(cur.rows[0].mean),
-    m2: Number(cur.rows[0].m2),
-  };
-  acc = removeFrom(acc, prevMark);
-
-  await client.query(
-    `INSERT INTO ${table} (${keyCols}, count, mean, m2)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (${keyCols})
-     DO UPDATE SET count = EXCLUDED.count, mean = EXCLUDED.mean, m2 = EXCLUDED.m2`,
-    [...keyValues, acc.count, acc.mean, acc.m2],
-  );
-}
-
-/**
- * Recount trigger: clear every stored contribution for this scope and reset
- * its accumulator. The current VTOP snapshot is then added by the caller;
- * other students repopulate the cohort as they fetch attendance again.
- *
- * Called when a stored hash differs from the newly observed mark.
- */
-async function triggerRecount(
-  client: DbClient,
-  classId: string,
-  scope: Scope,
-  assessmentKey: string,
-): Promise<void> {
-  // Delete all contribution hashes for this assessment.
-  await client.query(
-    `DELETE FROM class_user_marks
-      WHERE class_id = $1 AND scope = $2 AND assessment_key = $3`,
-    [classId, scope, assessmentKey],
-  );
-
-  // Reset the accumulator.
-  const table = scope === "overall" ? "class_overall_stats" : "class_assessment_stats";
-  const keyCols = scope === "overall" ? "class_id" : "class_id, assessment_key";
-  const keyValues = scope === "overall" ? [classId] : [classId, assessmentKey];
-
-  await client.query(
-    `INSERT INTO ${table} (${keyCols}, count, mean, m2)
-     VALUES ($1, 0, 0, 0)
-     ON CONFLICT (${keyCols})
-     DO UPDATE SET count = 0, mean = 0, m2 = 0`,
-    keyValues,
-  );
-}
-
-/**
- * Full recount endpoint helper. Deletes all marks for an assessment and
- * resets the accumulator. Returns the number of student rows zeroed.
- */
+/** Clear contribution hashes and reset one Welford accumulator in one D1 batch. */
 export async function recountAssessment(
   classId: string,
   scope: Scope,
   assessmentKey: string,
 ): Promise<{ zeroed: number }> {
   await ensureSchema();
-  const pool = getDbPool();
-
-  // Zero contribution hashes.
-  const { rowCount } = await pool.query(
-    `DELETE FROM class_user_marks
-      WHERE class_id = $1 AND scope = $2 AND assessment_key = $3`,
-    [classId, scope, assessmentKey],
-  );
-
-  // Reset accumulator
+  const db = await requireMarksDb();
   const table = scope === "overall" ? "class_overall_stats" : "class_assessment_stats";
-  const keyCols = scope === "overall" ? "class_id" : "class_id, assessment_key";
-  const keyValues = scope === "overall" ? [classId] : [classId, assessmentKey];
-
-  await pool.query(
-    `INSERT INTO ${table} (${keyCols}, count, mean, m2)
-     VALUES ($1, 0, 0, 0)
-     ON CONFLICT (${keyCols})
-     DO UPDATE SET count = 0, mean = 0, m2 = 0`,
-    keyValues,
-  );
-
-  return { zeroed: Number(rowCount ?? 0) };
+  const columns = scope === "overall" ? "class_id, count, mean, m2" : "class_id, assessment_key, count, mean, m2";
+  const values = scope === "overall" ? "?, 0, 0, 0" : "?, ?, 0, 0, 0";
+  const keys = scope === "overall" ? [classId] : [classId, assessmentKey];
+  const results = await db.batch([
+    db.prepare(`DELETE FROM class_user_marks WHERE class_id = ? AND scope = ? AND assessment_key = ?`)
+      .bind(classId, scope, assessmentKey),
+    db.prepare(`INSERT INTO ${table} (${columns}) VALUES (${values})
+      ON CONFLICT (${scope === "overall" ? "class_id" : "class_id, assessment_key"})
+      DO UPDATE SET count = 0, mean = 0, m2 = 0`).bind(...keys),
+  ]);
+  return { zeroed: Number(results[0]?.meta.changes ?? 0) };
 }
 
 /* ── read path ────────────────────────────────────────────────────────────── */
@@ -564,47 +390,28 @@ export type ClassStats = {
   assessments: Record<string, AssessmentStats>;
 };
 
-export async function statsForClasses(
-  classIds: string[]
-): Promise<Record<string, ClassStats>> {
+export async function statsForClasses(classIds: string[]): Promise<Record<string, ClassStats>> {
   if (classIds.length === 0) return {};
-
-  const pool = getDbPool();
+  await ensureSchema();
+  const db = await requireMarksDb();
   const unique = Array.from(new Set(classIds));
-
-  const [overallRes, assessmentRes] = await Promise.all([
-    pool.query(
-      `SELECT class_id, count, mean, m2 FROM class_overall_stats WHERE class_id = ANY($1)`,
-      [unique],
-    ),
-    pool.query(
-      `SELECT stats.class_id, stats.assessment_key, stats.count, stats.mean, stats.m2,
-              metadata.component, metadata.title
-         FROM class_assessment_stats AS stats
-         LEFT JOIN class_assessment_metadata AS metadata
-           USING (class_id, assessment_key)
-        WHERE stats.class_id = ANY($1)`,
-      [unique],
-    ),
+  const placeholders = unique.map(() => "?").join(", ");
+  const [overall, assessments] = await Promise.all([
+    db.prepare(`SELECT class_id, count, mean, m2 FROM class_overall_stats
+      WHERE class_id IN (${placeholders})`).bind(...unique).all<Record<string, unknown>>(),
+    db.prepare(`SELECT stats.class_id, stats.assessment_key, stats.count, stats.mean, stats.m2,
+          metadata.component, metadata.title FROM class_assessment_stats AS stats
+        LEFT JOIN class_assessment_metadata AS metadata USING (class_id, assessment_key)
+        WHERE stats.class_id IN (${placeholders})`).bind(...unique).all<Record<string, unknown>>(),
   ]);
-
   const out: Record<string, ClassStats> = {};
-  for (const id of unique) {
-    out[id] = { count: 0, mean: 0, sd: 0, assessments: {} };
-  }
-
-  for (const row of overallRes.rows as Array<Record<string, unknown>>) {
+  for (const id of unique) out[id] = { count: 0, mean: 0, sd: 0, assessments: {} };
+  for (const row of overall.results) {
     const acc = toAcc(row);
     const id = row.class_id as string;
-    out[id] = {
-      count: acc.count,
-      mean: acc.mean,
-      sd: standardDeviation(acc),
-      assessments: out[id].assessments,
-    };
+    out[id] = { count: acc.count, mean: acc.mean, sd: standardDeviation(acc), assessments: out[id].assessments };
   }
-
-  for (const row of assessmentRes.rows as Array<Record<string, unknown>>) {
+  for (const row of assessments.results) {
     const entry = out[row.class_id as string];
     if (!entry) continue;
     const acc = toAcc(row);
@@ -616,7 +423,6 @@ export async function statsForClasses(
       ...(typeof row.title === "string" ? { title: row.title } : {}),
     };
   }
-
   return out;
 }
 
@@ -641,30 +447,16 @@ export type TokenRecord = {
   updatedAt: number;
 };
 
-export async function tokensForOwner(
-  ownerKey: string,
-): Promise<TokenRecord[]> {
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT class_id, scope, assessment_key, value_token, updated_at
-       FROM class_user_marks
-      WHERE user_key = $1
-      ORDER BY class_id, scope, assessment_key`,
-    [ownerKey],
-  );
-  return rows.map(
-    (r: {
-      class_id: string;
-      scope: Scope;
-      assessment_key: string;
-      value_token: string;
-      updated_at: number;
-    }) => ({
-      classId: r.class_id,
-      scope: r.scope,
-      assessmentKey: r.assessment_key,
-      token: r.value_token,
-      updatedAt: Number(r.updated_at),
-    }),
-  );
+export async function tokensForOwner(ownerKey: string): Promise<TokenRecord[]> {
+  const db = await requireMarksDb();
+  const { results } = await db.prepare(`SELECT class_id, scope, assessment_key, value_token, updated_at
+    FROM class_user_marks WHERE user_key = ? ORDER BY class_id, scope, assessment_key`)
+    .bind(ownerKey).all<{ class_id: string; scope: Scope; assessment_key: string; value_token: string; updated_at: number }>();
+  return results.map((row) => ({
+    classId: row.class_id,
+    scope: row.scope,
+    assessmentKey: row.assessment_key,
+    token: row.value_token,
+    updatedAt: Number(row.updated_at),
+  }));
 }

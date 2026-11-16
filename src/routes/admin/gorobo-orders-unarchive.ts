@@ -23,7 +23,8 @@
  *         description: Order is not archived
  */
 
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { mapOrderRow, type GoroboOrderRow } from "../../lib/gorobo/orders";
@@ -41,9 +42,9 @@ export async function POST(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows: existing } = await pool.query<GoroboOrderRow>(
+    const { rows: existing } = await db.query<GoroboOrderRow>(
       `SELECT status, notes FROM gorobo_orders WHERE id = $1`,
       [id]
     );
@@ -59,7 +60,7 @@ export async function POST(req: Request, context: RouteContext) {
 
     const restoredNotes = (existing[0].notes || "").replace(/\s*\[ARCHIVED(?::\s*[^\[\]]*)?\]\s*$/, "");
 
-    const { rows } = await pool.query<GoroboOrderRow>(
+    const { rows } = await db.query<GoroboOrderRow>(
       `UPDATE gorobo_orders
        SET status = 'pending', notes = $2
        WHERE id = $1

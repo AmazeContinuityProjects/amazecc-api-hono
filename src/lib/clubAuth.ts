@@ -7,10 +7,10 @@
  *   3. that VTOP reg no exists in `club_representatives`.
  *
  * No credentials, no HMAC, no separate club tokens — unlink VTOP and club
- * access is gone instantly. `club_representatives` is still fed by the daily
- * VTOP sync (lib/syncClubs) and stays the source of truth for club roles.
+ * access is gone instantly. Club roles are maintained through the admin API;
+ * there is no background VTOP club sync.
  */
-import { getDbPool } from "./db";
+import { getAppDataDb } from "./sqlCompat";
 import { verifyAmazeSession } from "./amazeId";
 
 export interface ClubRole {
@@ -48,11 +48,8 @@ export function clubForbidden(message = "You do not represent any club"): Respon
 
 /** Fetch + dedupe the caller's club roles (super-club-rep wins duplicates). */
 export async function fetchClubRoles(vtopRegNo: string): Promise<ClubRole[]> {
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT DISTINCT club_id, role FROM club_representatives WHERE vtop_id = $1`,
-    [vtopRegNo]
-  );
+  const { rows } = await getAppDataDb().query<ClubRole>(
+    `SELECT DISTINCT club_id, role FROM club_representatives WHERE vtop_id = $1`, [vtopRegNo]);
   const seen = new Map<string, ClubRole>();
   for (const r of rows as ClubRole[]) {
     if (!r?.club_id) continue;

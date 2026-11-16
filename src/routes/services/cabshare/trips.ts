@@ -7,7 +7,7 @@
 import { Hono } from "hono";
 import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_HUBS_TABLE, CABSHARE_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { getDbPool } from "../../../../src/lib/db";
+import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareTripsRouter = new Hono();
 
@@ -54,25 +54,15 @@ cabshareTripsRouter.post("/trips", async (c) => {
       );
     }
 
-    const pool = getDbPool();
-    const { rows } = await pool.query(
-      `INSERT INTO ${CABSHARE_TRIPS_TABLE}
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
+    const result = await appDb.prepare(`INSERT INTO ${CABSHARE_TRIPS_TABLE}
         (user_id, hub_id, travel_date, preferred_time, tolerance_hours, seat_options, gender_preference, notes, status)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, 'active')
-       RETURNING trip_id`,
-      [
-        user.user_id,
-        body.hub_id,
-        body.travel_date,
-        body.preferred_time,
-        body.tolerance_hours ?? 0,
-        JSON.stringify(body.seat_options),
-        body.gender_preference,
-        body.notes ?? null,
-      ],
-    );
-
-    return c.json({ success: true, trip_id: rows[0].trip_id }, 200);
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')`)
+        .bind(user.user_id, body.hub_id, body.travel_date, body.preferred_time,
+          body.tolerance_hours ?? 0, JSON.stringify(body.seat_options), body.gender_preference,
+          body.notes ?? null).run();
+    return c.json({ success: true, trip_id: result.meta.last_row_id }, 200);
   } catch (err: unknown) {
     console.error("[cabshare] trips POST error:", err);
     return c.json(
@@ -90,30 +80,28 @@ cabshareTripsRouter.get("/trips", async (c) => {
     const hubId = c.req.query("hub_id");
     const date = c.req.query("date");
 
-    const pool = getDbPool();
+    const appDb = getWorkerEnv().APP_DB;
     let query = `
       SELECT t.*, u.name, u.reg_number as owner_reg_number, h.hub_name, h.city
       FROM ${CABSHARE_TRIPS_TABLE} t
       JOIN ${CABSHARE_TABLE} u ON t.user_id = u.user_id
       JOIN ${CABSHARE_HUBS_TABLE} h ON t.hub_id = h.hub_id
-      WHERE t.status = 'active' AND t.user_id <> $1`;
+      WHERE t.status = 'active' AND t.user_id <> ?`;
     const user = await ensureCabshareUser(regNo);
     const params: any[] = [user.user_id];
 
-    let paramIdx = 2;
     if (hubId) {
-      query += ` AND t.hub_id = $${paramIdx}`;
+      query += ` AND t.hub_id = ?`;
       params.push(hubId);
-      paramIdx++;
     }
     if (date) {
-      query += ` AND t.travel_date = $${paramIdx}`;
+      query += ` AND t.travel_date = ?`;
       params.push(date);
-      paramIdx++;
     }
     query += ` ORDER BY t.travel_date ASC, t.preferred_time ASC`;
 
-    const { rows } = await pool.query(query, params);
+    if (!appDb) throw new Error("APP_DB is not configured");
+    const rows = (await appDb.prepare(query).bind(...params).all()).results;
 
     return c.json({ success: true, trips: rows }, 200);
   } catch (err: unknown) {

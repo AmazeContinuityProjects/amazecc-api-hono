@@ -23,7 +23,7 @@
 import { Hono } from "hono";
 import { getClientIp, checkRateLimit, rateLimitResponse } from "../../lib/rateLimit";
 import { publicErrorMessage } from "../../lib/publicError";
-import { getDbPool } from "../../lib/db";
+import { getWorkerEnv } from "../../env";
 import {
   verifyAmazeSession,
   adminUnauthorized,
@@ -36,6 +36,8 @@ import {
 } from "../../lib/vtop";
 import { parseStudentProfile } from "../../lib/parsers/student-profile";
 import { ensureSchema, statsForClasses } from "../../lib/marksStats";
+import { ensureFfcsSemesterInD1, readD1Registrations } from "../../lib/socialD1";
+import { getStudentProfileByRegNo } from "../../lib/student-profiles";
 
 export const curvesRouter = new Hono();
 
@@ -118,16 +120,7 @@ curvesRouter.post("/curves", async (c) => {
     if (!regNo) return adminUnauthorized();
   }
 
-  const pool = getDbPool();
-
   try {
-    // Ensure a partial Amaze ID account exists for this reg number.
-    await pool.query(
-      `INSERT INTO student_profiles (reg_no, claim_status)
-       VALUES ($1, 'incomplete')
-       ON CONFLICT (reg_no) DO NOTHING`,
-      [regNo],
-    );
     await ensureSchema();
 
     if (body.classIds !== undefined) {
@@ -149,13 +142,16 @@ curvesRouter.post("/curves", async (c) => {
       }
 
       const semester = body.semesterId?.trim() || null;
-      const enrollment = await pool.query(
-        `SELECT DISTINCT class_id FROM ffcs_class_registrations
-          WHERE register_no = $1 AND class_id = ANY($2::text[])
-            AND ($3::text IS NULL OR semester_id = $3)`,
-        [regNo, requested, semester],
-      );
-      const allowed = enrollment.rows.map((row: { class_id: string }) => row.class_id);
+      const db = getWorkerEnv().APP_DB;
+      if (!db) throw new Error("APP_DB is not configured");
+      if (semester) await ensureFfcsSemesterInD1(semester);
+      const registrations = semester
+        ? await readD1Registrations(semester)
+        : (await db.prepare(`SELECT class_id, register_no FROM ffcs_class_registrations`)
+            .all<{ class_id: string; register_no: string }>()).results;
+      const allowed = [...new Set(registrations
+        .filter((row) => row.register_no.toUpperCase() === regNo && requested.includes(row.class_id))
+        .map((row) => row.class_id))];
       const stats = await statsForClasses(allowed);
       return c.json({ success: true, stats }, { status: 200 });
     }
@@ -167,13 +163,12 @@ curvesRouter.post("/curves", async (c) => {
 
     // ── Verify enrollment: caller must be registered for this class ──
     const semester = semesterId || "";
-    const enrollment = await pool.query(
-      `SELECT 1 FROM ffcs_class_registrations
-        WHERE semester_id = $1 AND class_id = $2 AND register_no = $3
-        LIMIT 1`,
-      [semester, classId, regNo],
-    );
-    if (enrollment.rows.length === 0) {
+    const db = getWorkerEnv().APP_DB;
+    if (!db) throw new Error("APP_DB is not configured");
+    await ensureFfcsSemesterInD1(semester);
+    const registrations = await readD1Registrations(semester);
+    const enrolled = registrations.some((row) => row.class_id === classId && row.register_no.toUpperCase() === regNo);
+    if (!enrolled) {
       return fail(403, "not_enrolled", {
         detail: "You are not enrolled in this class for the given semester",
       });
@@ -194,19 +189,15 @@ curvesRouter.post("/curves", async (c) => {
     }
 
     // ── Classmates: every other student in the same class ──
-    const { rows: classmateRows } = await pool.query(
-      `SELECT r.register_no, p.display_name, p.handle
-         FROM ffcs_class_registrations r
-         LEFT JOIN student_profiles p ON p.reg_no = r.register_no
-        WHERE r.semester_id = $1 AND r.class_id = $2 AND r.register_no <> $3
-        ORDER BY p.display_name, r.register_no`,
-      [semester, classId, regNo],
-    );
-
-    const classmates = classmateRows.map((r: any) => ({
-      reg_no: r.register_no,
-      display_name: r.display_name || null,
-    }));
+    let classmates: Array<{ reg_no: string; display_name: string | null }>;
+    const classmatesRegistrations = await readD1Registrations(semester);
+    classmates = await Promise.all(classmatesRegistrations
+      .filter((row) => row.class_id === classId && row.register_no.toUpperCase() !== regNo)
+      .map(async (row) => ({
+        reg_no: row.register_no,
+        display_name: (await getStudentProfileByRegNo(row.register_no))?.display_name || row.display_name || null,
+      })));
+    classmates.sort((a, b) => (a.display_name || "").localeCompare(b.display_name || "") || a.reg_no.localeCompare(b.reg_no));
 
     return c.json(
       {

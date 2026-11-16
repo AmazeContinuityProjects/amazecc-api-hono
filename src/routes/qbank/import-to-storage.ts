@@ -1,7 +1,6 @@
 import { requireSection } from"../../lib/auth";
-import { getDbPool } from "../../lib/db";
-import { getWorkerEnv } from "../../env";
 import { storagePut, storageUnavailable } from "../../lib/storage";
+import { ensureQbankInD1 } from "../../lib/qbankD1";
 
 const UA = "mozilla/5.0 (windows nt 10.0; win64; x64) applewebkit/537.36 (khtml, like gecko) chrome/91.0.4472.124 safari/537.36";
 
@@ -26,13 +25,13 @@ export async function POST(req: Request) {
       return Response.json({ success: false, error: "paperId required" }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rows } = await pool.query(`SELECT * FROM papers_archive WHERE source_id = $1`, [paperId]);
-    if (rows.length === 0) {
+    const db = await ensureQbankInD1();
+    const paper = await db.prepare(`SELECT * FROM papers_archive WHERE source_id = ?`)
+      .bind(paperId).first<Record<string, any>>();
+    if (!paper) {
       return Response.json({ success: false, error: "Paper not found" }, { status: 404 });
     }
 
-    const paper = rows[0];
     const remoteUrl = paper.file_url;
     if (!remoteUrl || remoteUrl === "DIRECT_JSON") {
       return Response.json({ success: false, error: "Paper does not have a downloadable file URL" }, { status: 400 });
@@ -74,12 +73,8 @@ export async function POST(req: Request) {
     const host = req.headers.get("host") || "hono.amazecc.com";
     const publicUrl = `${proto}://${host}/api/qbank/papers/download/${paperId}`;
 
-    await pool.query(
-      `UPDATE papers_archive
-         SET file_url = $1, file_size = $2, storage_provider = 'R2', source_type = 'UPLOAD'
-       WHERE source_id = $3`,
-      [publicUrl, buffer.byteLength, paperId]
-    );
+    await db.prepare(`UPDATE papers_archive SET file_url = ?, file_size = ?, storage_provider = 'R2', source_type = 'UPLOAD'
+      WHERE source_id = ?`).bind(publicUrl, buffer.byteLength, paperId).run();
 
     return Response.json({ success: true, fileUrl: publicUrl, fileSize: buffer.byteLength });
   } catch (error: unknown) {

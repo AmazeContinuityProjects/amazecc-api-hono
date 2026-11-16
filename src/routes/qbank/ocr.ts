@@ -1,5 +1,5 @@
 import { requireSection } from"../../lib/auth";
-import { getDbPool } from "../../lib/db";
+import { ensureQbankInD1, nextQbankId } from "../../lib/qbankD1";
 
 /**
  * Port of src/app/api/qbank/admin/ocr/route.ts.
@@ -14,8 +14,8 @@ export async function POST(req: Request) {
     const { paperId } = (await req.json()) as any;
     if (!paperId) return Response.json({ error: "Paper ID is required" }, { status: 400 });
 
-    const pool = getDbPool();
-    await pool.query(`UPDATE papers_archive SET approval_status = 'OCR_PROCESSING' WHERE source_id = $1`, [paperId]);
+    const db = await ensureQbankInD1();
+    await db.prepare(`UPDATE papers_archive SET approval_status = 'OCR_PROCESSING' WHERE source_id = ?`).bind(paperId).run();
 
     const extractedQuestions = [
       { num: "1", text: "Solve for x: $$\\frac{d}{dx} (e^{2x} \\sin x) = 0$$", marks: 5, type: "DESCRIPTIVE" },
@@ -27,14 +27,13 @@ export async function POST(req: Request) {
       const options = q.type === "MCQ" ? JSON.stringify({ A: "$$O(n \\log n)$$", B: "$$O(n^2)$$", C: "$$O(n)$$", D: "$$O(1)$$" }) : null;
       const answer = q.type === "MCQ" ? "B" : null;
 
-      await pool.query(
-        `INSERT INTO qbank_questions (source_id, question_number, question_text, marks, question_type, options, correct_answer)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [paperId, q.num, q.text, q.marks, q.type, options, answer]
-      );
+      await db.prepare(`INSERT INTO qbank_questions
+          (question_id, source_id, question_number, question_text, marks, question_type, options, correct_answer)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(await nextQbankId(), paperId, q.num, q.text, q.marks, q.type, options, answer).run();
     }
 
-    await pool.query(`UPDATE papers_archive SET approval_status = 'PENDING_Q_APPROVAL' WHERE source_id = $1`, [paperId]);
+    await db.prepare(`UPDATE papers_archive SET approval_status = 'PENDING_Q_APPROVAL' WHERE source_id = ?`).bind(paperId).run();
     return Response.json({ success: true, count: extractedQuestions.length });
   } catch (error: unknown) {
     console.error("OCR Pipeline Error:", error);

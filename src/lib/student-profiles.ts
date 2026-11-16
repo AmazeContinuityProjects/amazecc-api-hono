@@ -1,21 +1,9 @@
 /**
- * student_profiles — the single source of truth for a person across every
- * AmazeCC service (social, cabshare, marks, …).
- *
- * Keyed by reg_no (plaintext VTOP register number, e.g. 25BLC1081) — no
- * masking. When a student first appears in any service (social sync,
- * cabshare signup, marks), a row is created here with claim_status =
- * 'incomplete'. The student later claims their Amaze ID account, which links
- * D1 users.sub (amaze_sub) to this reg_no.
- *
- * Until claimed, Amaze-ID-authenticated routes return 403 profile_incomplete
- * with a "claim your Amaze ID" prompt.
- *
- * Inline DDL, following the house style used by socialDb.ts and marksStats.ts
- * (this repo has no migrations directory — a table only exists once a route
- * has been hit).
+ * student_profiles � the service-data D1 source of truth for VTOP identities.
+ * Register numbers are stored in plaintext so attendance, social, marks, and
+ * CabShare records can be joined consistently.
  */
-import { getDbPool } from "./db";
+import { getWorkerEnv } from "../env";
 
 export const STUDENT_PROFILES_TABLE = "student_profiles";
 
@@ -33,27 +21,26 @@ export type StudentProfile = {
   updated_at: string;
 };
 
-/** Ensure the student_profiles table exists. Safe to call on every request. */
-export async function ensureStudentProfilesSchema(): Promise<void> {
-  const pool = getDbPool();
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${STUDENT_PROFILES_TABLE} (
-      reg_no        TEXT PRIMARY KEY,
-      display_name  TEXT,
-      phone_number  TEXT,
-      email         TEXT,
-      branch        TEXT,
-      semester_id   TEXT,
-      photo_url     TEXT,
-      amaze_sub     TEXT UNIQUE,
-      claim_status  TEXT NOT NULL DEFAULT 'incomplete',
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+async function requireStudentProfilesDb(): Promise<D1Database> {
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  return db;
 }
 
-/** Upsert a person row, minting on first sight. */
+/** Require the service-data D1 binding; migrations own the profile schema. */
+export async function ensureStudentProfilesSchema(): Promise<void> {
+  await requireStudentProfilesDb();
+}
+
+async function readD1Profile(column: "reg_no" | "amaze_sub", value: string): Promise<StudentProfile | null> {
+  const db = await requireStudentProfilesDb();
+  return db.prepare(`SELECT reg_no, display_name, phone_number, email, branch, semester_id,
+      photo_url, amaze_sub, claim_status, created_at, updated_at
+    FROM ${STUDENT_PROFILES_TABLE} WHERE ${column} = ?`)
+    .bind(value).first<StudentProfile>();
+}
+
+/** Upsert a person row, minting it the first time any service sees them. */
 export async function upsertStudentProfile(
   regNo: string,
   fields: Partial<{
@@ -63,117 +50,60 @@ export async function upsertStudentProfile(
     branch: string;
     semester_id: string;
     photo_url: string;
-  }> = {}
+  }> = {},
 ): Promise<StudentProfile> {
-  const pool = getDbPool();
   const cleanRegNo = regNo.trim().toUpperCase();
-
-  await pool.query(
-    `INSERT INTO ${STUDENT_PROFILES_TABLE}
-       (reg_no, display_name, phone_number, email, branch, semester_id, photo_url, claim_status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'incomplete')
-     ON CONFLICT (reg_no) DO UPDATE SET
-       display_name = CASE WHEN EXCLUDED.display_name IS NOT NULL AND EXCLUDED.display_name <> ''
-                           THEN EXCLUDED.display_name ELSE ${STUDENT_PROFILES_TABLE}.display_name END,
-       phone_number = CASE WHEN EXCLUDED.phone_number IS NOT NULL AND EXCLUDED.phone_number <> ''
-                           THEN EXCLUDED.phone_number ELSE ${STUDENT_PROFILES_TABLE}.phone_number END,
-       email        = CASE WHEN EXCLUDED.email IS NOT NULL AND EXCLUDED.email <> ''
-                           THEN EXCLUDED.email ELSE ${STUDENT_PROFILES_TABLE}.email END,
-       branch       = CASE WHEN EXCLUDED.branch IS NOT NULL AND EXCLUDED.branch <> ''
-                           THEN EXCLUDED.branch ELSE ${STUDENT_PROFILES_TABLE}.branch END,
-       semester_id  = CASE WHEN EXCLUDED.semester_id IS NOT NULL AND EXCLUDED.semester_id <> ''
-                           THEN EXCLUDED.semester_id ELSE ${STUDENT_PROFILES_TABLE}.semester_id END,
-       photo_url    = CASE WHEN EXCLUDED.photo_url IS NOT NULL AND EXCLUDED.photo_url <> ''
-                           THEN EXCLUDED.photo_url ELSE ${STUDENT_PROFILES_TABLE}.photo_url END,
-       updated_at   = NOW()`,
-    [
-      cleanRegNo,
-      fields.display_name ?? null,
-      fields.phone_number ?? null,
-      fields.email ?? null,
-      fields.branch ?? null,
-      fields.semester_id ?? null,
-      fields.photo_url ?? null,
-    ],
-  );
-
-  const profile = await getStudentProfileByRegNo(cleanRegNo);
+  const db = await requireStudentProfilesDb();
+  const previous = await db.prepare(`SELECT display_name, phone_number, email, branch, semester_id, photo_url
+    FROM ${STUDENT_PROFILES_TABLE} WHERE reg_no = ?`).bind(cleanRegNo)
+    .first<Pick<StudentProfile, "display_name" | "phone_number" | "email" | "branch" | "semester_id" | "photo_url">>();
+  const merged = {
+    display_name: fields.display_name || previous?.display_name || null,
+    phone_number: fields.phone_number || previous?.phone_number || null,
+    email: fields.email || previous?.email || null,
+    branch: fields.branch || previous?.branch || null,
+    semester_id: fields.semester_id || previous?.semester_id || null,
+    photo_url: fields.photo_url || previous?.photo_url || null,
+  };
+  await db.prepare(`INSERT INTO ${STUDENT_PROFILES_TABLE}
+      (reg_no, display_name, phone_number, email, branch, semester_id, photo_url, claim_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'incomplete')
+    ON CONFLICT (reg_no) DO UPDATE SET
+      display_name = CASE WHEN excluded.display_name IS NOT NULL AND excluded.display_name <> '' THEN excluded.display_name ELSE ${STUDENT_PROFILES_TABLE}.display_name END,
+      phone_number = CASE WHEN excluded.phone_number IS NOT NULL AND excluded.phone_number <> '' THEN excluded.phone_number ELSE ${STUDENT_PROFILES_TABLE}.phone_number END,
+      email = CASE WHEN excluded.email IS NOT NULL AND excluded.email <> '' THEN excluded.email ELSE ${STUDENT_PROFILES_TABLE}.email END,
+      branch = CASE WHEN excluded.branch IS NOT NULL AND excluded.branch <> '' THEN excluded.branch ELSE ${STUDENT_PROFILES_TABLE}.branch END,
+      semester_id = CASE WHEN excluded.semester_id IS NOT NULL AND excluded.semester_id <> '' THEN excluded.semester_id ELSE ${STUDENT_PROFILES_TABLE}.semester_id END,
+      photo_url = CASE WHEN excluded.photo_url IS NOT NULL AND excluded.photo_url <> '' THEN excluded.photo_url ELSE ${STUDENT_PROFILES_TABLE}.photo_url END,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`)
+    .bind(cleanRegNo, merged.display_name, merged.phone_number, merged.email, merged.branch, merged.semester_id, merged.photo_url)
+    .run();
+  const profile = await readD1Profile("reg_no", cleanRegNo);
   if (!profile) throw new Error("Failed to read back student profile");
   return profile;
 }
 
-/** Look up a profile by reg_no. */
-export async function getStudentProfileByRegNo(
-  regNo: string,
-): Promise<StudentProfile | null> {
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT reg_no, display_name, phone_number, email, branch, semester_id,
-            photo_url, amaze_sub, claim_status,
-            to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-            to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
-       FROM ${STUDENT_PROFILES_TABLE}
-      WHERE reg_no = $1`,
-    [regNo.trim().toUpperCase()],
-  );
-  if (!rows.length) return null;
-  return rows[0] as StudentProfile;
+export async function getStudentProfileByRegNo(regNo: string): Promise<StudentProfile | null> {
+  return readD1Profile("reg_no", regNo.trim().toUpperCase());
 }
 
-/** Look up a profile by Amaze ID sub (after the user has claimed their account). */
-export async function getStudentProfileByAmazeSub(
-  amazeSub: string,
-): Promise<StudentProfile | null> {
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT reg_no, display_name, phone_number, email, branch, semester_id,
-            photo_url, amaze_sub, claim_status,
-            to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-            to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
-       FROM ${STUDENT_PROFILES_TABLE}
-      WHERE amaze_sub = $1`,
-    [amazeSub],
-  );
-  if (!rows.length) return null;
-  return rows[0] as StudentProfile;
+export async function getStudentProfileByAmazeSub(amazeSub: string): Promise<StudentProfile | null> {
+  return readD1Profile("amaze_sub", amazeSub);
 }
 
-/**
- * Link an Amaze ID sub to a reg_no (the "claim" step).
- *
- * Called after the user verifies their Amaze ID email. Sets claim_status to
- * 'claimed' and stores the D1 users.sub so future Amaze-ID-authenticated
- * requests resolve to this person.
- */
-export async function linkAmazeSub(
-  regNo: string,
-  amazeSub: string,
-): Promise<StudentProfile> {
-  const pool = getDbPool();
+/** Link the verified D1 Amaze ID subject to a VTOP register number. */
+export async function linkAmazeSub(regNo: string, amazeSub: string): Promise<StudentProfile> {
   const cleanRegNo = regNo.trim().toUpperCase();
-
-  // Ensure the profile exists (claiming can happen before any service touch)
+  const db = await requireStudentProfilesDb();
   await upsertStudentProfile(cleanRegNo);
-
-  const { rows } = await pool.query(
-    `UPDATE ${STUDENT_PROFILES_TABLE}
-       SET amaze_sub = $2,
-           claim_status = 'claimed',
-           updated_at = NOW()
-     WHERE reg_no = $1
-     RETURNING reg_no, display_name, phone_number, email, branch, semester_id,
-               photo_url, amaze_sub, claim_status,
-               to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-               to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at`,
-    [cleanRegNo, amazeSub],
-  );
-  if (!rows.length) {
-    throw new Error(`No student profile for reg_no ${cleanRegNo}`);
-  }
-  return rows[0] as StudentProfile;
+  await db.prepare(`UPDATE ${STUDENT_PROFILES_TABLE}
+    SET amaze_sub = ?, claim_status = 'claimed', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE reg_no = ?`).bind(amazeSub, cleanRegNo).run();
+  const profile = await getStudentProfileByRegNo(cleanRegNo);
+  if (!profile || profile.amaze_sub !== amazeSub) throw new Error(`No student profile for reg_no ${cleanRegNo}`);
+  return profile;
 }
 
-/** Backfill student_profiles from an existing reg_no + display_name. */
 export async function backfillStudentProfile(
   regNo: string,
   displayName: string | null,
@@ -185,38 +115,20 @@ export async function backfillStudentProfile(
   });
 }
 
-/**
- * Update a user's phone number with sanitization.
- *
- * Phone numbers are sanitized before storage:
- *   - All non-digit characters are stripped
- *   - Must be a valid 10-digit Indian mobile number (starts with 6/7/8/9)
- *   - Stored as plain digits (no country code, no formatting)
- *   - Optional field — can be cleared by sending empty string or null
- */
-export async function updatePhoneNumber(
-  regNo: string,
-  phoneNumber: string | null,
-): Promise<string | null> {
-  const pool = getDbPool();
+/** Sanitize and store an optional 10-digit Indian mobile number. */
+export async function updatePhoneNumber(regNo: string, phoneNumber: string | null): Promise<string | null> {
   const cleanRegNo = regNo.trim().toUpperCase();
-
   let sanitized: string | null = null;
   if (phoneNumber !== null && phoneNumber !== undefined && phoneNumber !== "") {
     const digits = phoneNumber.replace(/\D/g, "");
-    // Indian mobile: 10 digits, starts with 6/7/8/9
     if (!/^[6-9]\d{9}$/.test(digits)) {
       throw new Error("Invalid phone number. Provide a 10-digit mobile number.");
     }
     sanitized = digits;
   }
-
-  await pool.query(
-    `UPDATE student_profiles
-       SET phone_number = $1, updated_at = NOW()
-     WHERE reg_no = $2`,
-    [sanitized, cleanRegNo],
-  );
-
+  const db = await requireStudentProfilesDb();
+  await db.prepare(`UPDATE ${STUDENT_PROFILES_TABLE}
+    SET phone_number = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE reg_no = ?`).bind(sanitized, cleanRegNo).run();
   return sanitized;
 }

@@ -1,5 +1,4 @@
 import { maskUserID } from "./mask";
-import { getDbPool } from "./db";
 import { getWorkerEnv } from "../env";
 import { hmacSha256Hex } from "./crypto";
 
@@ -24,20 +23,20 @@ async function previousKeyedHash(vtop_id: string): Promise<string | null> {
 
 /** Rewrites this user's legacy rows to the keyed hash. Cheap no-op once done. */
 export async function migrateLegacyPromotions(
-  pool: { query: (text: string, values?: unknown[]) => Promise<{ rows: unknown[]; rowCount?: number }> },
+  db: { query: (text: string, values?: unknown[]) => Promise<{ rows: unknown[]; rowCount?: number }> },
   vtop_id: string
 ): Promise<string> {
   const hash = await promoteHash(vtop_id);
   const legacy = await legacyHash(vtop_id);
   const previous = await previousKeyedHash(vtop_id);
   for (const oldHash of new Set([legacy, previous].filter((value): value is string => !!value))) {
-    await pool.query(
+    await db.query(
       `UPDATE post_promotions SET user_hash = $1
          WHERE user_hash = $2
            AND NOT EXISTS (SELECT 1 FROM post_promotions q WHERE q.post_id = post_promotions.post_id AND q.user_hash = $1)`,
       [hash, oldHash]
     );
-    await pool.query(`DELETE FROM post_promotions WHERE user_hash = $1`, [oldHash]);
+    await db.query(`DELETE FROM post_promotions WHERE user_hash = $1`, [oldHash]);
   }
   return hash;
 }

@@ -1,4 +1,5 @@
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema, type GoroboItem } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { mapItemRow, computePrice } from "../../lib/gorobo/items";
@@ -24,9 +25,9 @@ export async function PUT(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows: existing } = await pool.query<GoroboItem>(
+    const { rows: existing } = await db.query<GoroboItem>(
       `SELECT id, name, description, price, base_price, margin, category, in_stock, image,
               sku, stock_quantity, low_stock_threshold, location_bin, datasheet_url, tags, updated_at
        FROM gorobo_items WHERE id = $1`,
@@ -68,12 +69,12 @@ export async function PUT(req: Request, context: RouteContext) {
     const marg = Math.round(margin * 100) / 100;
     const price = computePrice(base, marg);
 
-    const { rows } = await pool.query<GoroboItem>(
+    const { rows } = await db.query<GoroboItem>(
       `UPDATE gorobo_items
        SET name = $1, description = $2, price = $3, base_price = $4, margin = $5,
            category = $6, in_stock = $7, image = $8, sku = $9, stock_quantity = $10,
            low_stock_threshold = $11, location_bin = $12, datasheet_url = $13, tags = $14,
-           updated_at = now()
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE id = $15
        RETURNING id, name, description, price, base_price, margin, category, in_stock, image,
                  sku, stock_quantity, low_stock_threshold, location_bin, datasheet_url, tags, updated_at`,
@@ -105,9 +106,9 @@ export async function DELETE(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rowCount } = await pool.query(
+    const { rowCount } = await db.query(
       `DELETE FROM gorobo_items WHERE id = $1`,
       [id]
     );

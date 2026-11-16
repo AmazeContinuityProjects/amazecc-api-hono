@@ -19,7 +19,8 @@
  *         description: Forbidden
  */
 
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 
@@ -41,11 +42,11 @@ export async function GET(req: Request) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows } = await pool.query<EntryRow>(
+    const { rows } = await db.query<EntryRow>(
       `SELECT w.order_id, o.user_name, o.phone_number, o.created_at,
-              w.party, w.kind, w.amount::float8, w.status
+              w.party, w.kind, w.amount, w.status
        FROM gorobo_wallet_entries w
        JOIN gorobo_orders o ON o.id = w.order_id
        ORDER BY o.created_at DESC, w.kind, w.party`

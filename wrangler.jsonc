@@ -6,15 +6,9 @@
  *   https://amazecc-api-hono.sugeethjayaraj2007.workers.dev (workers.dev)
  *
  * Bindings:
+ *   env.APP_DB     -> D1 "amazecc-api" (service data; migration in progress)
  *   env.AUTH_DB    -> D1 "amazecc-auth" (SHARED with auth.amazecc.com)
  *                     Amaze ID users/sessions are looked up here.
- *   env.HYPERDRIVE -> Hyperdrive "amazecc-db-direct"
- *                     origin db.<project-ref>.supabase.co:5432 (user `postgres`)
- *                     NOTE: the Supabase transaction pooler
- *                     (aws-1-ap-northeast-2.pooler.supabase.com:6543)
- *                     silently hangs every query routed through
- *                     Hyperdrive - use the direct host.
- *   env.SYNC_QUEUE -> queue "amazecc-sync" (producer + consumer, DLQ amazecc-sync-dlq)
  *
  * Secrets (already pushed): ADMIN_SECRET, GENERATOR_KEY, ADMIN_VTOP_IDS,
  *   NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
@@ -23,10 +17,10 @@
  * token (auth.amazecc.com) with role=admin in the shared D1. The legacy HMAC
  * admin login (/api/admin/auth) is removed. Emergency rollback: `wrangler rollback`.
  *
- * Local dev: set DATABASE_URL (or CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
- * to a reachable local Postgres). Without a reachable DB, DB-backed routes fail
- * fast locally (scraping routes work fine). The local D1 mirror holds the same
- * schema as production; seed a local admin with
+ * Current local dev uses Wrangler's local APP_DB. DATABASE_URL is only used
+ * by scripts/backfill-d1.mjs to read the Postgres migration source.
+ * Apply D1 migrations with `wrangler d1 migrations apply amazecc-api --local`.
+ * The local AUTH_DB mirror can be seeded with
  *   wrangler d1 execute amazecc-auth --local --file ../amazecc-auth/migrations/0001_init.sql
  *
  * Re-deploy:   pnpm exec wrangler deploy
@@ -47,34 +41,17 @@
   ],
   "d1_databases": [
     {
+      "binding": "APP_DB",
+      "database_name": "amazecc-api",
+      "database_id": "274c2ee2-20c6-48de-9e87-2eeb603d82e8",
+      "migrations_dir": "migrations"
+    },
+    {
       "binding": "AUTH_DB",
       "database_name": "amazecc-auth",
       "database_id": "8c4535b4-da9a-416e-8151-0d09db6ff9c6"
     }
   ],
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "5dfc99cf90dc4fa0b438abe9801737b0",
-      // Local dev (wrangler dev) - point this at YOUR local Postgres, or set
-      // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE instead.
-      "localConnectionString": "postgresql://postgres:postgres@localhost:5432/postgres"
-    }
-  ],
-  "queues": {
-    "producers": [
-      { "binding": "SYNC_QUEUE", "queue": "amazecc-sync" }
-    ],
-    "consumers": [
-      {
-        "queue": "amazecc-sync",
-        "max_batch_size": 10,
-        "max_batch_timeout": 30,
-        "max_retries": 3,
-        "dead_letter_queue": "amazecc-sync-dlq"
-      }
-    ]
-  },
   "observability": {
     "enabled": true
   }

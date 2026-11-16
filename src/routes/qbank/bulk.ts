@@ -1,5 +1,5 @@
 import { requireSection } from"../../lib/auth";
-import { getDbPool } from "../../lib/db";
+import { ensureQbankInD1, nextQbankId } from "../../lib/qbankD1";
 
 /** Port of src/app/api/qbank/admin/questions/bulk/route.ts. */
 export async function POST(req: Request) {
@@ -12,38 +12,44 @@ export async function POST(req: Request) {
       return Response.json({ success: false, error: "Invalid payload" }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("DELETE FROM qbank_questions WHERE source_id = $1", [paperId]);
-
+    const db = await ensureQbankInD1();
+    if (db) {
+      const existing = await db.prepare(`SELECT question_id FROM qbank_questions WHERE source_id = ?`)
+        .bind(paperId).all<{ question_id: string }>();
+      const statements: D1PreparedStatement[] = [];
+      const ids: string[] = [];
       for (const q of questions) {
-        await client.query(
-          `INSERT INTO qbank_questions (source_id, question_number, question_type, topic_name, marks, question_text, options, correct_answer, image_url)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [
-            paperId,
-            q.question_number?.toString() || "1",
+        const questionId = await nextQbankId();
+        ids.push(questionId);
+        statements.push(db.prepare(`INSERT INTO qbank_questions
+          (question_id, source_id, question_number, question_type, topic_name, marks, question_text, options, correct_answer, image_url)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(questionId, paperId, q.question_number?.toString() || "1",
             q.question_type || (q.options && Object.keys(q.options).length > 0 ? "MCQ" : "DESCRIPTIVE"),
-            q.topic_name || null,
-            parseInt(q.marks) || 0,
-            q.question_text || "",
-            q.options ? JSON.stringify(q.options) : null,
-            q.correct_answer || null,
-            q.image_url || null,
-          ]
-        );
+            q.topic_name || null, Number.parseInt(q.marks) || 0, q.question_text || "",
+            q.options ? JSON.stringify(q.options) : null, q.correct_answer || null, q.image_url || null));
       }
-
-      await client.query("COMMIT");
+      try {
+        for (let index = 0; index < statements.length; index += 80) {
+          await db.batch(statements.slice(index, index + 80));
+        }
+        const keep = new Set(ids);
+        const staleIds = existing.results.map((row) => row.question_id).filter((id) => !keep.has(id));
+        const deletes = staleIds.map((id) => db.prepare(`DELETE FROM qbank_questions WHERE question_id = ?`).bind(id));
+        for (let index = 0; index < deletes.length; index += 80) {
+          await db.batch(deletes.slice(index, index + 80));
+        }
+      } catch (error) {
+        if (ids.length) {
+          await db.prepare(`DELETE FROM qbank_questions WHERE question_id IN (${ids.map(() => "?").join(", ")})`)
+            .bind(...ids).run().catch(() => {});
+        }
+        throw error;
+      }
       return Response.json({ success: true, count: questions.length });
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      await client.release();
     }
+
+    throw new Error("APP_DB is not configured");
   } catch (error: unknown) {
     console.error("Bulk questions import error:", error);
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });

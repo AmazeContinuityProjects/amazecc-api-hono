@@ -1,4 +1,5 @@
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema, type GoroboBundle } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { logAdminAction } from "../../lib/audit";
@@ -10,8 +11,8 @@ export async function GET(req: Request) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
-    const { rows } = await pool.query<GoroboBundle>(
+    const db = getAppDataDb();
+    const { rows } = await db.query<GoroboBundle>(
       `SELECT id, name, description, category, items, bundle_price, discount_pct, image, is_active, created_at, updated_at
        FROM gorobo_bundles
        ORDER BY category ASC, name ASC`
@@ -64,9 +65,9 @@ export async function POST(req: Request) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows } = await pool.query<GoroboBundle>(
+    const { rows } = await db.query<GoroboBundle>(
       `INSERT INTO gorobo_bundles (name, description, category, items, bundle_price, discount_pct, image, is_active)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, name, description, category, items, bundle_price, discount_pct, image, is_active, created_at, updated_at`,

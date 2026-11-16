@@ -1,5 +1,5 @@
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
+import { ensureQbankInD1 } from '../../lib/qbankD1';
 
 
 
@@ -46,13 +46,11 @@ export async function POST(req: Request) {
     const { paperId } = await (req.json() as any);
     if (!paperId) return Response.json({ error: 'Paper ID is required' }, { status: 400 });
 
-    const pool = getDbPool();
+    const db = await ensureQbankInD1();
 
     // Reset status to PENDING so it can be "Started" again or manually reviewed
-    await pool.query(
-      `UPDATE papers_archive SET approval_status = 'PENDING' WHERE source_id = $1`,
-      [paperId]
-    );
+    await db.prepare(`UPDATE papers_archive SET approval_status = 'PENDING' WHERE source_id = ?`)
+      .bind(paperId).run();
 
     return Response.json({ success: true, message: 'Paper status reset to PENDING' });
   } catch (error: unknown) {

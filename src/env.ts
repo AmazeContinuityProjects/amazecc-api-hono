@@ -9,10 +9,8 @@
  */
 
 export interface WorkerEnv {
-  /** Hyperdrive binding (production). Falls back to DATABASE_URL when absent. */
-  HYPERDRIVE?: Hyperdrive;
-  /** Direct connection string - local dev only. */
-  DATABASE_URL?: string;
+  /** Dedicated service-data D1 database. AUTH_DB remains isolated for Better Auth. */
+  APP_DB?: D1Database;
   /**
    * Native Cloudflare R2 bucket for QBank papers (papers/<id>.pdf). Preferred
    * storage backend; falls back to B2_* S3-compatible credentials when unset.
@@ -29,11 +27,9 @@ export interface WorkerEnv {
   ADMIN_VTOP_IDS?: string;
   TRUSTED_IP_HEADER?: string;
   VTOP_BASE_URL?: string;
-  PG_POOL_MAX?: string;
   VAPID_PRIVATE_KEY?: string;
   NEXT_PUBLIC_VAPID_PUBLIC_KEY?: string;
   CRON_SECRET?: string;
-  SYNC_QUEUE?: Queue;
   /** B2 / S3-compatible storage for qbank admin + papers (aws4fetch signed). */
   B2_REGION?: string;
   B2_ENDPOINT?: string;

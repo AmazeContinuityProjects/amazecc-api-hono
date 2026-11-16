@@ -1,4 +1,5 @@
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema, type GoroboItem } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { mapItemRow } from "../../lib/gorobo/items";
@@ -27,7 +28,7 @@ export async function PATCH(req: Request) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     let query: string;
     let params: unknown[];
@@ -37,7 +38,7 @@ export async function PATCH(req: Request) {
       query = `UPDATE gorobo_items
                SET stock_quantity = $1,
                    in_stock = ($1 > 0),
-                   updated_at = now()
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                WHERE id = $2
                RETURNING id, name, description, price, base_price, margin, category, in_stock, image,
                          sku, stock_quantity, low_stock_threshold, location_bin, datasheet_url, tags, updated_at`;
@@ -45,9 +46,9 @@ export async function PATCH(req: Request) {
     } else if (delta !== undefined) {
       const d = parseInt(String(delta), 10) || 0;
       query = `UPDATE gorobo_items
-               SET stock_quantity = GREATEST(0, stock_quantity + $1),
-                   in_stock = (GREATEST(0, stock_quantity + $1) > 0),
-                   updated_at = now()
+               SET stock_quantity = MAX(0, stock_quantity + $1),
+                   in_stock = (MAX(0, stock_quantity + $1) > 0),
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                WHERE id = $2
                RETURNING id, name, description, price, base_price, margin, category, in_stock, image,
                          sku, stock_quantity, low_stock_threshold, location_bin, datasheet_url, tags, updated_at`;
@@ -56,7 +57,7 @@ export async function PATCH(req: Request) {
       return Response.json({ success: false, error: "Must specify delta or stockQuantity" }, { status: 400 });
     }
 
-    const { rows } = await pool.query<GoroboItem>(query, params);
+    const { rows } = await db.query<GoroboItem>(query, params);
     if (rows.length === 0) {
       return Response.json({ success: false, error: "Item not found" }, { status: 404 });
     }

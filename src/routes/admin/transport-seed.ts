@@ -1,6 +1,6 @@
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
 import seedData from '../../data/transport/seed.json';
+import { ensureTransportInD1 } from '../../lib/transportD1';
 
 
 export async function POST(req: Request) {
@@ -21,63 +21,49 @@ export async function POST(req: Request) {
     return Response.json({ success: false, error: 'Seed data must contain routes, placements, or rules' }, { status: 400 });
   }
 
-  const pool = getDbPool();
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    // Group placements by route number for merging into bus rows
+  const db = await ensureTransportInD1();
+  {
+    const statements: D1PreparedStatement[] = [];
     const placementsByRoute: Record<string, { dispersalTime: string; zone: string }[]> = {};
     if (data.placements) {
-      for (const p of data.placements) {
-        if (!placementsByRoute[p.routeNumber]) placementsByRoute[p.routeNumber] = [];
-        placementsByRoute[p.routeNumber].push({ dispersalTime: p.dispersalTime, zone: p.zone });
+      for (const placement of data.placements) {
+        if (!placementsByRoute[placement.routeNumber]) placementsByRoute[placement.routeNumber] = [];
+        placementsByRoute[placement.routeNumber].push({ dispersalTime: placement.dispersalTime, zone: placement.zone });
       }
     }
-
     if (data.routes) {
-      await client.query('DELETE FROM buses_v2');
-
-      for (const r of data.routes) {
-        const stopsJson = JSON.stringify(r.stops || []);
-        const routePlacements = placementsByRoute[r.routeNumber] || [];
-        const placementsJson = JSON.stringify(routePlacements);
-
-        await client.query(
-          `INSERT INTO buses_v2 (route_number, route_name, type, driver_name, driver_phone, whatsapp_group, bus_location, supervisor_name, supervisor_phone, driver_incharge_name, driver_incharge_phone, stops, placements)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb)`,
-          [r.routeNumber, r.routeName, r.type, r.driverName || '', r.driverPhone || '', r.whatsappGroup || '', r.busLocation || '', r.supervisorName || '', r.supervisorPhone || '', ((r as Record<string, unknown>).driverInchargeName as string) || '', ((r as Record<string, unknown>).driverInchargePhone as string) || '', stopsJson, placementsJson]
-        );
+      statements.push(db.prepare('DELETE FROM buses_v2'));
+      for (const route of data.routes) {
+        statements.push(db.prepare(`INSERT INTO buses_v2
+          (route_number, route_name, type, driver_name, driver_phone, whatsapp_group, bus_location,
+           supervisor_name, supervisor_phone, driver_incharge_name, driver_incharge_phone, stops, placements)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(route.routeNumber, route.routeName, route.type, route.driverName || '', route.driverPhone || '',
+            route.whatsappGroup || '', route.busLocation || '', route.supervisorName || '', route.supervisorPhone || '',
+            (route as Record<string, unknown>).driverInchargeName || '',
+            (route as Record<string, unknown>).driverInchargePhone || '', JSON.stringify(route.stops || []),
+            JSON.stringify(placementsByRoute[route.routeNumber] || [])));
+      }
+    } else if (data.placements) {
+      statements.push(db.prepare(`UPDATE buses_v2 SET placements = '[]', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`));
+      for (const [routeNumber, routePlacements] of Object.entries(placementsByRoute)) {
+        statements.push(db.prepare(`UPDATE buses_v2 SET placements = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE route_number = ?`)
+          .bind(JSON.stringify(routePlacements), routeNumber));
       }
     }
-
     if (data.rules) {
-      await client.query('DELETE FROM transport_rules');
-      for (const r of data.rules) {
-        await client.query(
-          `INSERT INTO transport_rules (rule_number, content) VALUES ($1, $2)`,
-          [r.ruleNumber, r.content]
-        );
+      statements.push(db.prepare('DELETE FROM transport_rules'));
+      for (const rule of data.rules) {
+        statements.push(db.prepare('INSERT INTO transport_rules (rule_number, content) VALUES (?, ?)')
+          .bind(rule.ruleNumber, rule.content));
       }
     }
-
-    await client.query('COMMIT');
-
-    const routeCount = data.routes?.length || 0;
-    const placementCount = data.placements?.length || 0;
-    const ruleCount = data.rules?.length || 0;
-
+    if (statements.length > 999) return Response.json({ success: false, error: 'Seed contains too many rows for one atomic update' }, { status: 400 });
+    if (statements.length) await db.batch(statements);
     return Response.json({
       success: true,
       message: 'Transport data seeded successfully',
-      stats: { routes: routeCount, placements: placementCount, rules: ruleCount },
+      stats: { routes: data.routes?.length || 0, placements: data.placements?.length || 0, rules: data.rules?.length || 0 },
     });
-  } catch (error: unknown) {
-    await client.query('ROLLBACK');
-    console.error('Failed to seed transport data:', error);
-    return Response.json({ success: false, error: 'Internal server error' }, { status: 500 });
-  } finally {
-    client.release();
   }
 }

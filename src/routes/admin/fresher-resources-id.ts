@@ -1,4 +1,4 @@
-import { getDbPool } from '../../lib/db';
+import { getAppDataDb } from '../../lib/sqlCompat';
 import { hasAdminPermission, requireSection } from'../../lib/auth';
 import { logAdminAction } from '../../lib/audit';
 import { publicErrorMessage } from "../../lib/publicError";
@@ -39,11 +39,11 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       return Response.json({ success: false, error: 'No fields to update' }, { status: 400 });
     }
 
-    setClauses.push(`updated_at = now()`);
+    setClauses.push(`updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`);
     values.push(numericId);
 
-    const pool = getDbPool();
-    const { rows } = await pool.query(
+    const db = getAppDataDb();
+    const { rows } = await db.query(
       `UPDATE fresher_resources SET ${setClauses.join(', ')} WHERE id = $${idx}
        RETURNING id, title, description, url, icon, sort_order, is_active, updated_at`,
       values
@@ -85,8 +85,8 @@ export async function DELETE(req: Request, context: { params: Promise<{ id: stri
       return Response.json({ success: false, error: 'Invalid id' }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rowCount } = await pool.query(
+    const db = getAppDataDb();
+    const { rowCount } = await db.query(
       'DELETE FROM fresher_resources WHERE id = $1',
       [numericId]
     );

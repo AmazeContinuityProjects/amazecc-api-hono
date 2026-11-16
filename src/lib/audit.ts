@@ -1,4 +1,5 @@
-import { getDbPool } from "./db";
+import { getAppDataDb } from "./sqlCompat";
+import { getWorkerEnv } from "../env";
 
 export interface AuditLogEntry {
   admin_user: string;
@@ -9,29 +10,9 @@ export interface AuditLogEntry {
   user_agent?: string;
 }
 
-/**
- * Creates the admin_audit_logs table if it does not already exist.
- */
+/** The D1 table is created by migrations/0011_postgres_schema_alignment.sql. */
 export async function ensureAuditLogsTable() {
-  try {
-    const pool = getDbPool();
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS admin_audit_logs (
-        id SERIAL PRIMARY KEY,
-        admin_user TEXT NOT NULL,
-        action TEXT NOT NULL,
-        target_resource TEXT DEFAULT '',
-        details JSONB DEFAULT '{}'::jsonb,
-        ip_address TEXT DEFAULT '',
-        user_agent TEXT DEFAULT '',
-        created_at TIMESTAMPTZ DEFAULT now()
-      );
-      CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs (created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_admin_user ON admin_audit_logs (admin_user);
-    `);
-  } catch (err) {
-    console.error("Failed to ensure admin_audit_logs table:", err);
-  }
+  if (!getWorkerEnv().APP_DB) throw new Error("APP_DB is not configured");
 }
 
 /**
@@ -47,8 +28,8 @@ export async function logAdminAction({
 }: AuditLogEntry) {
   try {
     await ensureAuditLogsTable();
-    const pool = getDbPool();
-    await pool.query(
+    const db = getAppDataDb();
+    await db.query(
       `INSERT INTO admin_audit_logs (admin_user, action, target_resource, details, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [

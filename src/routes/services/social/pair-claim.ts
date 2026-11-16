@@ -7,10 +7,10 @@
  */
 import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { identifyCaller, ensureSocialSchema, SOCIAL_TABLE, generateHandle } from "../../../../src/lib/social";
-import { getDbPool } from "../../../../src/lib/db";
+import { identifyCaller, SOCIAL_TABLE } from "../../../../src/lib/social";
 import { randomUUID } from "node:crypto";
 import { hash } from "../../../../src/lib/generator";
+import { ensureSocialInD1 } from "../../../../src/lib/socialD1";
 
 const MAX_GRANTS = 200;
 const HANDLE_RE = /^AMZ-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
@@ -40,14 +40,15 @@ socialPairClaimRouter.post("/pair/claim", async (c) => {
         { success: false, error: "invalid_handle_format", detail: { detail: "Handle must match AMZ-XXXX-XXXX" } }, 400);
     }
 
-    await ensureSocialSchema();
-    const pool = getDbPool();
+    const db = await ensureSocialInD1();
 
     // Find peer by handle
-    const { rows: peerRows } = await pool.query(
-      "SELECT owner_key, display_name FROM social_people WHERE handle = $1",
-      [body.handle.trim().toUpperCase()],
-    );
+    const peerRows = (await db.prepare(`SELECT p.owner_key, p.display_name FROM social_people p
+          WHERE p.handle = ? OR EXISTS (
+            SELECT 1 FROM social_handle_aliases a
+             WHERE a.handle = ? AND a.register_no = UPPER(TRIM(p.register_no))) LIMIT 1`)
+      .bind(body.handle.trim().toUpperCase(), body.handle.trim().toUpperCase())
+      .all<{ owner_key: string; display_name: string | null }>()).results;
     if (!peerRows.length) {
       return c.json(
         { success: false, error: "handle_not_found", detail: { detail: "Handle not found" } }, 404);
@@ -61,22 +62,17 @@ socialPairClaimRouter.post("/pair/claim", async (c) => {
     }
 
     // Check grant limit
-    const { rows: grantCount } = await pool.query(
-      `SELECT COUNT(*) AS n FROM ${SOCIAL_TABLE}
-       WHERE (owner_a = $1 OR owner_b = $1) AND revoked_at IS NULL`,
-      [callerKey],
-    );
-    if (Number(grantCount[0].n) >= MAX_GRANTS) {
+    const grantCount = await db.prepare(`SELECT COUNT(*) AS n FROM ${SOCIAL_TABLE}
+      WHERE (owner_a = ? OR owner_b = ?) AND revoked_at IS NULL`).bind(callerKey, callerKey).first<{ n: number }>();
+    if (Number(grantCount?.n ?? 0) >= MAX_GRANTS) {
       return c.json(
         { success: false, error: "grant_limit_reached", detail: { detail: "Grant limit reached" } }, 409);
     }
 
     // Check existing grant
-    const { rows: existing } = await pool.query(
-      `SELECT * FROM ${SOCIAL_TABLE}
-       WHERE (owner_a = $1 AND owner_b = $2) OR (owner_a = $2 AND owner_b = $1)`,
-      [callerKey, peerKey],
-    );
+    const existing = (await db.prepare(`SELECT * FROM ${SOCIAL_TABLE}
+          WHERE (owner_a = ? AND owner_b = ?) OR (owner_a = ? AND owner_b = ?)`)
+      .bind(callerKey, peerKey, peerKey, callerKey).all<any>()).results;
     let grantId: string;
     let created = false;
     let visibility = body.visibility || "coarse";
@@ -89,19 +85,14 @@ socialPairClaimRouter.post("/pair/claim", async (c) => {
       grantId = `grant_${randomUUID()}`;
       secret = `sec_${randomUUID()}`;
       const secretHash = hash(`social-grant-secret:${secret}`);
-      await pool.query(
-        `INSERT INTO ${SOCIAL_TABLE} (grant_id, owner_a, owner_b, secret_hash, visibility)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [grantId, callerKey, peerKey, secretHash, visibility],
-      );
+      await db.prepare(`INSERT INTO ${SOCIAL_TABLE} (grant_id, owner_a, owner_b, secret_hash, visibility)
+        VALUES (?, ?, ?, ?, ?)`).bind(grantId, callerKey, peerKey, secretHash, visibility).run();
       created = true;
     }
 
     // Get peer semesters
-    const { rows: peerSemesters } = await pool.query(
-      `SELECT DISTINCT semester_id FROM social_timetables WHERE owner_key = $1`,
-      [peerKey],
-    );
+    const semesters = (await db.prepare(`SELECT DISTINCT semester_id FROM social_timetables WHERE owner_key = ?`)
+      .bind(peerKey).all<{ semester_id: string }>()).results;
 
     return c.json({
       success: true,
@@ -113,7 +104,7 @@ socialPairClaimRouter.post("/pair/claim", async (c) => {
         handle: body.handle.trim().toUpperCase(),
         name: peerRows[0].display_name || null,
         lastPublishedAt: null,
-        semesters: peerSemesters.map((r: any) => r.semester_id),
+        semesters: semesters.map((r: any) => r.semester_id),
       },
     });
   } catch (err: unknown) {

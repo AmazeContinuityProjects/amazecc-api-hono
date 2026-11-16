@@ -25,11 +25,12 @@
  *         description: Order is not in confirmed status
  */
 
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
 import { ensureGoroboSchema, type GoroboOrderLine } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { computeQuote, computeWalletAmounts } from "../../lib/gorobo/quote";
 import { mapOrderRow, type GoroboOrderRow } from "../../lib/gorobo/orders";
+import { getWorkerEnv } from "../../env";
 
 
 interface RouteContext {
@@ -44,42 +45,22 @@ export async function POST(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
-
-    const { rows: existing } = await pool.query<GoroboOrderRow>(
-      `SELECT status FROM gorobo_orders WHERE id = $1`,
-      [id]
-    );
-    if (existing.length === 0) {
-      return Response.json({ success: false, error: "Order not found" }, { status: 404 });
-    }
-    if (existing[0].status !== "confirmed") {
-      return Response.json(
-        { success: false, error: `Only confirmed orders can be completed (current: ${existing[0].status})` },
-        { status: 409 }
-      );
-    }
-
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-
-      const { rows: orderRows } = await client.query<GoroboOrderRow>(
-        `SELECT id, user_name, phone_number, items, total, status, subtotal, discount_pct,
-                discount_amount, gst_pct, gst_amount, shipment_cost, notes, created_at
-         FROM gorobo_orders WHERE id = $1 FOR UPDATE`,
-        [id]
-      );
-      const order = orderRows[0];
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
+    if (appDb) {
+      const order = await appDb.prepare(`SELECT id, user_name, phone_number, items, total, status, subtotal,
+          discount_pct, discount_amount, gst_pct, gst_amount, shipment_cost, notes, created_at
+        FROM gorobo_orders WHERE id = ?`).bind(id).first<GoroboOrderRow & { items: string | GoroboOrderLine[] }>();
+      if (!order) {
+        return Response.json({ success: false, error: "Order not found" }, { status: 404 });
+      }
       if (order.status !== "confirmed") {
-        await client.query("ROLLBACK");
         return Response.json(
           { success: false, error: `Only confirmed orders can be completed (current: ${order.status})` },
-          { status: 409 }
+          { status: 409 },
         );
       }
-
-      const lines: GoroboOrderLine[] = Array.isArray(order.items) ? order.items : [];
+      const lines = Array.isArray(order.items) ? order.items : JSON.parse(order.items || "[]") as GoroboOrderLine[];
       const quote = computeQuote({
         lines,
         discountPct: Number(order.discount_pct),
@@ -87,45 +68,44 @@ export async function POST(req: Request, context: RouteContext) {
         shipmentCost: Number(order.shipment_cost),
       });
       const wallet = computeWalletAmounts(quote, lines);
-
-      await client.query(
-        `UPDATE gorobo_orders SET status = 'completed' WHERE id = $1`,
-        [id]
-      );
-      await client.query(
-        `INSERT INTO gorobo_wallet_entries (order_id, party, kind, amount) VALUES
-         ($1, 'customer', 'profit', $2),
-         ($1, 'customer', 'gst', $3),
-         ($1, 'vendor', 'cost', $4)`,
-        [id, wallet.profit, wallet.gst, wallet.cost]
-      );
-
-      await client.query("COMMIT");
-
-      const { rows: freshOrder } = await client.query<GoroboOrderRow>(
-        `SELECT id, user_name, phone_number, items, total, status, subtotal, discount_pct,
-                discount_amount, gst_pct, gst_amount, shipment_cost, notes, created_at
-         FROM gorobo_orders WHERE id = $1`,
-        [id]
-      );
-
-      const { rows: walletRows } = await client.query(
-        `SELECT party, kind, amount::float8, status, settled_at, created_at
-         FROM gorobo_wallet_entries WHERE order_id = $1 ORDER BY kind, party`,
-        [id]
-      );
-
-      return Response.json({
-        success: true,
-        order: mapOrderRow(freshOrder[0]),
-        wallet: walletRows,
-      });
-    } catch (error: unknown) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
+      const results = await appDb.batch([
+        appDb.prepare(`UPDATE gorobo_orders SET status = 'completed' WHERE id = ? AND status = 'confirmed'`).bind(id),
+        appDb.prepare(`INSERT INTO gorobo_wallet_entries (order_id, party, kind, amount)
+          SELECT ?, 'customer', 'profit', ? WHERE EXISTS (
+            SELECT 1 FROM gorobo_orders WHERE id = ? AND status = 'completed'
+          ) AND NOT EXISTS (SELECT 1 FROM gorobo_wallet_entries WHERE order_id = ? AND party = 'customer' AND kind = 'profit')`)
+          .bind(id, wallet.profit, id, id),
+        appDb.prepare(`INSERT INTO gorobo_wallet_entries (order_id, party, kind, amount)
+          SELECT ?, 'customer', 'gst', ? WHERE EXISTS (
+            SELECT 1 FROM gorobo_orders WHERE id = ? AND status = 'completed'
+          ) AND NOT EXISTS (SELECT 1 FROM gorobo_wallet_entries WHERE order_id = ? AND party = 'customer' AND kind = 'gst')`)
+          .bind(id, wallet.gst, id, id),
+        appDb.prepare(`INSERT INTO gorobo_wallet_entries (order_id, party, kind, amount)
+          SELECT ?, 'vendor', 'cost', ? WHERE EXISTS (
+            SELECT 1 FROM gorobo_orders WHERE id = ? AND status = 'completed'
+          ) AND NOT EXISTS (SELECT 1 FROM gorobo_wallet_entries WHERE order_id = ? AND party = 'vendor' AND kind = 'cost')`)
+          .bind(id, wallet.cost, id, id),
+      ]);
+      if ((results[0]?.meta.changes ?? 0) === 0) {
+        const current = await appDb.prepare(`SELECT status FROM gorobo_orders WHERE id = ?`).bind(id).first<{ status: string }>();
+        return Response.json(
+          { success: false, error: `Only confirmed orders can be completed (current: ${current?.status ?? "missing"})` },
+          { status: 409 },
+        );
+      }
+      const freshOrder = await appDb.prepare(`SELECT id, user_name, phone_number, items, total, status, subtotal,
+          discount_pct, discount_amount, gst_pct, gst_amount, shipment_cost, notes, created_at
+        FROM gorobo_orders WHERE id = ?`).bind(id).first<GoroboOrderRow & { items: string | GoroboOrderLine[] }>();
+      const walletRows = await appDb.prepare(`SELECT party, kind, amount, status, settled_at, created_at
+        FROM gorobo_wallet_entries WHERE order_id = ? ORDER BY kind, party`).bind(id).all();
+      if (!freshOrder) throw new Error(`Completed GoRobo order ${id} disappeared`);
+      const normalizedOrder = {
+        ...freshOrder,
+        items: Array.isArray(freshOrder.items) ? freshOrder.items : JSON.parse(freshOrder.items || "[]"),
+      } as GoroboOrderRow;
+      return Response.json({ success: true, order: mapOrderRow(normalizedOrder), wallet: walletRows.results });
     }
+    throw new Error("GoRobo order completion did not return a D1 result");
   } catch (error: unknown) {
     console.error("admin gorobo order complete error:", (error instanceof Error ? error.message : String(error)));
     return Response.json({ success: false, error: getDbErrorMessage(error) }, { status: getDbErrorStatus(error) });

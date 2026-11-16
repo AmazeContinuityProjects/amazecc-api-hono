@@ -3,31 +3,27 @@
  */
 import { Hono } from "hono";
 import { CABSHARE_TRIPS_TABLE, CABSHARE_TABLE, CABSHARE_HUBS_TABLE } from "../../../../src/lib/cabshare";
-import { getDbPool } from "../../../../src/lib/db";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
+import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareStatsRouter = new Hono();
 
 cabshareStatsRouter.get("/stats", async (c) => {
   try {
-    const pool = getDbPool();
-    const { rows: totalTrips } = await pool.query(
-      `SELECT COUNT(*) as total FROM ${CABSHARE_TRIPS_TABLE}`,
-    );
-    const { rows: activeTrips } = await pool.query(
-      `SELECT COUNT(*) as total FROM ${CABSHARE_TRIPS_TABLE} WHERE status = 'active'`,
-    );
-    const { rows: totalUsers } = await pool.query(
-      `SELECT COUNT(*) as total FROM ${CABSHARE_TABLE}`,
-    );
-    const { rows: popularHubs } = await pool.query(
-      `SELECT h.hub_name, COUNT(t.trip_id) as trip_count
-       FROM ${CABSHARE_HUBS_TABLE} h
-       LEFT JOIN ${CABSHARE_TRIPS_TABLE} t ON h.hub_id = t.hub_id
-       GROUP BY h.hub_id, h.hub_name
-       ORDER BY trip_count DESC
-       LIMIT 3`,
-    );
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
+    let totalTrips;
+    let activeTrips;
+    let totalUsers;
+    let popularHubs;
+    {
+      totalTrips = [await appDb.prepare(`SELECT COUNT(*) AS total FROM ${CABSHARE_TRIPS_TABLE}`).first<{ total: number }>() ?? { total: 0 }];
+      activeTrips = [await appDb.prepare(`SELECT COUNT(*) AS total FROM ${CABSHARE_TRIPS_TABLE} WHERE status = 'active'`).first<{ total: number }>() ?? { total: 0 }];
+      totalUsers = [await appDb.prepare(`SELECT COUNT(*) AS total FROM ${CABSHARE_TABLE}`).first<{ total: number }>() ?? { total: 0 }];
+      popularHubs = (await appDb.prepare(`SELECT h.hub_name, COUNT(t.trip_id) AS trip_count
+        FROM ${CABSHARE_HUBS_TABLE} h LEFT JOIN ${CABSHARE_TRIPS_TABLE} t ON h.hub_id = t.hub_id
+        GROUP BY h.hub_id, h.hub_name ORDER BY trip_count DESC LIMIT 3`).all<any>()).results;
+    }
 
     return c.json({
       success: true,

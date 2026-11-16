@@ -1,5 +1,5 @@
 import { requireClubAuth } from "../../lib/clubAuth";
-import { getDbPool } from "../../lib/db";
+import { getAppDataDb } from "../../lib/sqlCompat";
 
 /** Port of src/app/api/club-admin/details/route.ts. */
 export async function GET(req: Request) {
@@ -11,8 +11,8 @@ export async function GET(req: Request) {
       return Response.json({ success: false, error: "club_id is required" }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rows } = await pool.query("SELECT * FROM club_details WHERE club_id = $1", [club_id]);
+    const db = getAppDataDb();
+    const { rows } = await db.query("SELECT * FROM club_details WHERE club_id = $1", [club_id]);
 
     if (rows.length === 0) {
       return Response.json({ success: false, error: "Club not found" }, { status: 404 });
@@ -31,11 +31,11 @@ export async function POST(req: Request) {
     const data = (await req.json()) as any;
     let club_id = auth.club_id;
 
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     if (data.club_id && data.club_id !== auth.club_id) {
       if (auth.role !== "super-club-rep") {
-        const { rowCount } = await pool.query(
+        const { rowCount } = await db.query(
           "SELECT 1 FROM club_representatives WHERE vtop_id = $1 AND club_id = $2",
           [auth.vtop_id, data.club_id]
         );
@@ -60,10 +60,10 @@ export async function POST(req: Request) {
       logo_url,
     } = data;
 
-    const { rowCount } = await pool.query("SELECT club_id FROM club_details WHERE club_id = $1", [club_id]);
+    const { rowCount } = await db.query("SELECT club_id FROM club_details WHERE club_id = $1", [club_id]);
 
     if (rowCount && rowCount > 0) {
-      await pool.query(
+      await db.query(
         `UPDATE club_details
             SET mission = $1, description = $2, hiring_process = $3, website = $4, recruitment_link = $5,
                 instagram = $6, whatsapp = $7, poc = $8, email = $9, poc_phone = $10, logo_url = $11,
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
         [mission, description, hiring_process, website, recruitment_link, instagram, whatsapp, poc, email, poc_phone, logo_url || null, club_id]
       );
     } else {
-      await pool.query(
+      await db.query(
         `INSERT INTO club_details (club_id, club_name, mission, description, hiring_process, website, recruitment_link, instagram, whatsapp, poc, email, poc_phone, logo_url)
          VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [club_id, mission, description, hiring_process, website, recruitment_link, instagram, whatsapp, poc, email, poc_phone, logo_url || null]

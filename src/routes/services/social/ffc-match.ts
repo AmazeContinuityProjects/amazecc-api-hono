@@ -11,15 +11,25 @@ import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import {
   identifyCaller,
-  ensureSocialSchema,
-  FFCS_MATCH_TABLE,
-  FFCS_CLASSES_TABLE,
-  FFCS_CLASS_REGISTRATIONS_TABLE,
   generateHandle,
-  migrateLegacyOwnerKeyForRegister,
+  getSocialHandlesForRegister,
   regKey,
 } from "../../../../src/lib/social";
-import { getDbPool } from "../../../../src/lib/db";
+import {
+  type FfcsRegistrationRow,
+  ensureFfcsSemesterInD1,
+  migrateD1FfcsOwnerKey,
+  migrateD1SocialOwnerKey,
+  readD1Classes,
+  readD1Registrations,
+  readD1Matches,
+  readD1Match,
+  saveD1Match,
+  setD1MatchVisibilityAndRegistration,
+  updateD1RegistrationIdentity,
+  upsertD1RegisteredClasses,
+  removeD1Match,
+} from "../../../../src/lib/socialD1";
 import { verifyAmazeSession } from "../../../../src/lib/amazeId";
 import {
   ensureStudentProfilesSchema,
@@ -148,106 +158,63 @@ async function syncRegisteredClasses(caller: MatchCaller, semesterId: string): P
     .filter((course) => CLASS_ID_RE.test(course.classId.trim().toUpperCase()) && course.classId.trim().toUpperCase().startsWith(semesterId))
     .slice(0, MAX_REGISTERED_CLASSES);
   if (!validCourses.length) return [];
-  const pool = getDbPool();
+  await ensureFfcsSemesterInD1(semesterId);
   const classIds: string[] = [];
-  await pool.query(
-    `DELETE FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
-      WHERE semester_id = $1 AND UPPER(register_no) = ANY($2::text[])`,
-    [semesterId, [...new Set([caller.regNo, caller.authorizedID].filter(Boolean).map((value) => value!.toUpperCase()))]],
-  );
-  await pool.query(
-    `UPDATE ${FFCS_CLASSES_TABLE}
-        SET register_nos = array_remove(array_remove(register_nos, $1), $2), updated_at = NOW()
-      WHERE semester_id = $3`,
-    [caller.regNo, caller.authorizedID ?? "", semesterId],
-  );
-
-  for (const course of validCourses) {
+  const mappedCourses = validCourses.map((course) => {
     const classId = course.classId.trim().toUpperCase();
     const offering = offeringFromTimetable(course);
     classIds.push(classId);
-    await pool.query(
-      `INSERT INTO ${FFCS_CLASSES_TABLE}
-         (semester_id, class_id, course_code, course_title, course_type, slot, faculty, credits, room, register_nos)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10]::text[])
-       ON CONFLICT (semester_id, class_id) DO UPDATE SET
-         course_code = EXCLUDED.course_code,
-         course_title = EXCLUDED.course_title,
-         course_type = EXCLUDED.course_type,
-         slot = EXCLUDED.slot,
-         faculty = EXCLUDED.faculty,
-         credits = EXCLUDED.credits,
-         room = EXCLUDED.room,
-         register_nos = ARRAY(SELECT DISTINCT value FROM UNNEST(${FFCS_CLASSES_TABLE}.register_nos || EXCLUDED.register_nos) AS value),
-         updated_at = NOW()`,
-      [semesterId, classId, offering.code, offering.title, offering.type, offering.slot, offering.faculty, offering.credits, offering.room, caller.regNo],
-    );
-    await pool.query(
-      `INSERT INTO ${FFCS_CLASS_REGISTRATIONS_TABLE}
-         (semester_id, class_id, register_no, display_name, handle, owner_key, discoverable, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
-       ON CONFLICT (semester_id, class_id, register_no) DO UPDATE SET
-         display_name = EXCLUDED.display_name,
-         handle = EXCLUDED.handle,
-         owner_key = EXCLUDED.owner_key,
-         updated_at = NOW()`,
-      [semesterId, classId, caller.regNo, caller.displayName, caller.handle, caller.ownerKey],
-    );
-  }
+    return {
+      classId,
+      courseCode: offering.code,
+      courseTitle: offering.title,
+      courseType: offering.type,
+      slot: offering.slot,
+      faculty: offering.faculty,
+      credits: offering.credits,
+      room: offering.room,
+    };
+  });
+  await upsertD1RegisteredClasses({
+    semesterId,
+    ownerKey: caller.ownerKey,
+    registerNo: caller.regNo,
+    authorizedID: caller.authorizedID,
+    displayName: caller.displayName,
+    handle: caller.handle,
+    courses: mappedCourses,
+  });
   return [...new Set(classIds)].sort().slice(0, MAX_REGISTERED_CLASSES);
 }
 
 async function enrolledClassIds(caller: MatchCaller, semesterId: string): Promise<string[]> {
   const identifiers = [...new Set([caller.regNo, caller.authorizedID].filter(Boolean).map((value) => value!.toUpperCase()))];
-  const { rows } = await getDbPool().query(
-    `SELECT class_id FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
-      WHERE semester_id = $1 AND UPPER(register_no) = ANY($2::text[])
-      ORDER BY class_id`,
-    [semesterId, identifiers],
-  );
-  return rows.map((row: any) => String(row.class_id).toUpperCase());
+  await ensureFfcsSemesterInD1(semesterId);
+  const registrations = await readD1Registrations(semesterId);
+  return [...new Set(registrations
+    .filter((row) => identifiers.includes(row.register_no.toUpperCase()))
+    .map((row) => String(row.class_id).toUpperCase()))].sort();
 }
 
 /** Build the response shape consumed by the Friend Finder client. */
 async function buildMatchState(caller: MatchCaller, semesterId: string) {
-  const pool = getDbPool();
-  const [entryResult, participantResult] = await Promise.all([
-    pool.query(
-      `SELECT class_ids, source, discoverable, changes_in_window, window_started_at, updated_at
-         FROM ${FFCS_MATCH_TABLE} WHERE owner_key = $1 AND semester_id = $2`,
-      [caller.ownerKey, semesterId],
-    ),
-    pool.query(
-      `SELECT COUNT(*)::int AS count FROM ${FFCS_MATCH_TABLE} WHERE semester_id = $1`,
-      [semesterId],
-    ),
-  ]);
-  const entry = entryResult.rows[0] as any;
-  const classIds = entry?.class_ids ?? [];
+  await ensureFfcsSemesterInD1(semesterId);
+  const entries = await readD1Matches(semesterId);
+  const entry = entries.find((row) => row.owner_key === caller.ownerKey);
+  const classIds: string[] = entry?.class_ids ?? [];
+  const participantCount = entries.length;
   const discoverable = Boolean(entry?.discoverable);
-  const candidatesResult = entry && discoverable && classIds.length
-    ? await pool.query(
-        `SELECT owner_key, register_no, display_name, class_ids, source, updated_at
-           FROM ${FFCS_MATCH_TABLE}
-          WHERE semester_id = $1 AND owner_key <> $2 AND discoverable = TRUE
-            AND class_ids && $3::text[]`,
-        [semesterId, caller.ownerKey, classIds],
-      )
-    : { rows: [] as any[] };
-  const classesResult = classIds.length
-    ? await pool.query(
-        `SELECT class_id, course_code, course_title, course_type, slot, faculty, credits, room
-           FROM ${FFCS_CLASSES_TABLE}
-          WHERE semester_id = $1 AND class_id = ANY($2::text[])`,
-        [semesterId, classIds],
-      )
-    : { rows: [] as any[] };
-
-  const meSet = new Set<string>(classIds);
-  const peopleByClass = new Map<string, any[]>(classIds.map((classId: string) => [classId, []]));
+  const meSet = new Set(classIds);
+  const candidates = entry && discoverable
+    ? entries.filter((row) => row.owner_key !== caller.ownerKey && row.discoverable
+      && row.class_ids.some((classId) => meSet.has(classId)))
+    : [];
+  const offerings = new Map((await readD1Classes(semesterId))
+    .filter((row) => meSet.has(row.class_id)).map((row) => [row.class_id, row]));
+  const peopleByClass = new Map<string, any[]>(classIds.map((classId) => [classId, []]));
   const overlaps: any[] = [];
-  for (const candidate of candidatesResult.rows as any[]) {
-    const otherIds: string[] = candidate.class_ids ?? [];
+  for (const candidate of candidates) {
+    const otherIds = candidate.class_ids ?? [];
     const sharedClassIds = otherIds.filter((id) => meSet.has(id));
     if (!sharedClassIds.length) continue;
     const person = {
@@ -269,25 +236,21 @@ async function buildMatchState(caller: MatchCaller, semesterId: string) {
     }
   }
   overlaps.sort((a, b) => Number(b.identical) - Number(a.identical) || b.shared - a.shared || a.name.localeCompare(b.name));
-
-  const offerings = new Map((classesResult.rows as any[]).map((row) => [row.class_id, row]));
-  const sections = classIds.map((classId: string) => {
-    const row = offerings.get(classId) as any;
+  const sections = classIds.map((classId) => {
+    const row = offerings.get(classId);
     const people = peopleByClass.get(classId) ?? [];
     return {
       classId,
-      offering: row
-        ? {
-            classId,
-            code: row.course_code || "",
-            title: row.course_title || "",
-            type: row.course_type || "",
-            credits: row.credits || "",
-            room: row.room || "",
-            slot: row.slot || "",
-            faculty: row.faculty || "",
-          }
-        : null,
+      offering: row ? {
+        classId,
+        code: row.course_code || "",
+        title: row.course_title || "",
+        type: row.course_type || "",
+        credits: row.credits || "",
+        room: row.room || "",
+        slot: row.slot || "",
+        faculty: row.faculty || "",
+      } : null,
       registerNos: people.map((person) => person.regNo).filter(Boolean),
       people,
     };
@@ -297,11 +260,11 @@ async function buildMatchState(caller: MatchCaller, semesterId: string) {
   const changesLeft = !entry || expired
     ? MAX_CHANGES_PER_DAY
     : Math.max(0, MAX_CHANGES_PER_DAY - Number(entry.changes_in_window));
-
   return {
     success: true,
     semesterId,
-    participants: Number(participantResult.rows[0]?.count ?? 0),
+    handles: await getSocialHandlesForRegister(caller.regNo),
+    participants: participantCount,
     me: {
       handle: caller.handle,
       name: caller.displayName,
@@ -323,56 +286,45 @@ export const socialFfcsMatchRouter = new Hono();
 socialFfcsMatchRouter.get("/ffcs-match", async (c) => {
   try {
     const params = new URL(c.req.raw.url).searchParams;
-    const semesterId = params.get("semesterId");
+    const semesterId = params.get("semesterId")?.trim().toUpperCase();
     const classIdsParam = params.get("classIds");
-
     if (!semesterId) {
       return c.json({ success: false, error: "semester_not_supported", detail: { detail: "semesterId is required" } }, 400);
     }
 
-    const pool = getDbPool();
-    await ensureSocialSchema();
-
-    let query = `
-      SELECT c.class_id, c.course_code, c.course_title, c.course_type, c.slot, c.faculty, c.credits, c.room,
-             COALESCE(
-               json_agg(json_build_object('regNo', r.register_no, 'name', r.display_name, 'handle', r.handle))
-               FILTER (WHERE r.register_no IS NOT NULL AND r.discoverable AND m.owner_key IS NOT NULL),
-               '[]'::json) AS students
-      FROM ${FFCS_CLASSES_TABLE} c
-      LEFT JOIN ${FFCS_CLASS_REGISTRATIONS_TABLE} r
-        ON r.semester_id = c.semester_id AND r.class_id = c.class_id
-      LEFT JOIN ${FFCS_MATCH_TABLE} m
-        ON m.semester_id = c.semester_id AND m.owner_key = r.owner_key
-       AND m.discoverable = TRUE AND c.class_id = ANY(m.class_ids)
-      WHERE c.semester_id = $1`;
-    const paramsArr: any[] = [semesterId];
-
-    if (classIdsParam) {
-      const classIds = classIdsParam.split(",").filter(Boolean);
-      query += ` AND c.class_id = ANY($2)`;
-      paramsArr.push(classIds);
+    await ensureFfcsSemesterInD1(semesterId);
+    const requestedIds = classIdsParam ? new Set(classIdsParam.split(",").filter(Boolean)) : null;
+    const [classes, registrations, entries] = await Promise.all([
+      readD1Classes(semesterId),
+      readD1Registrations(semesterId),
+      readD1Matches(semesterId),
+    ]);
+    const discoverableOwners = new Set(entries.filter((entry) => entry.discoverable).map((entry) => entry.owner_key));
+    const registrationsByClass = new Map<string, FfcsRegistrationRow[]>();
+    for (const registration of registrations) {
+      if (!registration.discoverable || !discoverableOwners.has(registration.owner_key)) continue;
+      const current = registrationsByClass.get(registration.class_id) ?? [];
+      current.push(registration);
+      registrationsByClass.set(registration.class_id, current);
     }
-    query += ` GROUP BY c.class_id, c.course_code, c.course_title, c.course_type, c.slot, c.faculty, c.credits, c.room
-               ORDER BY c.course_code, c.class_id`;
-
-    const { rows } = await pool.query(query, paramsArr);
-
-    return c.json({
-      success: true,
-      semesterId,
-      classes: rows.map((r: any) => ({
-        classId: r.class_id,
-        courseCode: r.course_code || "",
-        courseTitle: r.course_title || "",
-        courseType: r.course_type || "",
-        slot: r.slot || "",
-        faculty: r.faculty || "",
-        credits: r.credits || "",
-        room: r.room || "",
-        students: r.students || [],
-      })),
-    });
+    const resultClasses = classes
+      .filter((row) => !requestedIds || requestedIds.has(row.class_id))
+      .map((row) => ({
+        classId: row.class_id,
+        courseCode: row.course_code || "",
+        courseTitle: row.course_title || "",
+        courseType: row.course_type || "",
+        slot: row.slot || "",
+        faculty: row.faculty || "",
+        credits: row.credits || "",
+        room: row.room || "",
+        students: (registrationsByClass.get(row.class_id) ?? []).map((person) => ({
+          regNo: person.register_no,
+          name: person.display_name,
+          handle: person.handle,
+        })),
+      }));
+    return c.json({ success: true, semesterId, classes: resultClasses });
   } catch (err: unknown) {
     console.error("[social] ffc-match GET error:", err);
     return c.json({ success: false, error: publicErrorMessage(err) }, 500);
@@ -391,20 +343,14 @@ socialFfcsMatchRouter.post("/ffcs-match", async (c) => {
     if (!["get", "publish", "visibility", "leave", "classes"].includes(op)) {
       return c.json({ success: false, error: "invalid_op", detail: { detail: "Unknown friend finder operation" } }, 400);
     }
+    await ensureFfcsSemesterInD1(semesterId);
 
-    const pool = getDbPool();
-    await ensureSocialSchema();
-    await ensureStudentProfilesSchema();
     if (op === "classes") {
-      const { rows } = await pool.query(
-        `SELECT class_id, course_code, course_title, course_type, slot, faculty, credits, room
-           FROM ${FFCS_CLASSES_TABLE} WHERE semester_id = $1 ORDER BY course_code, class_id`,
-        [semesterId],
-      );
+      const classes = await readD1Classes(semesterId);
       return c.json({
         success: true,
         semesterId,
-        classes: rows.map((row: any) => ({
+        classes: classes.map((row) => ({
           classId: row.class_id,
           courseCode: row.course_code || "",
           courseTitle: row.course_title || "",
@@ -417,12 +363,15 @@ socialFfcsMatchRouter.post("/ffcs-match", async (c) => {
         })),
       });
     }
+
     const resolution = await resolveMatchCaller(c.req.raw, body);
     if (!resolution.ok) {
       return c.json({ success: false, error: resolution.error, detail: resolution.detail }, resolution.status as any);
     }
     const caller = resolution.caller;
-    await migrateLegacyOwnerKeyForRegister(caller.regNo);
+    await migrateD1SocialOwnerKey(caller.regNo, caller.ownerKey);
+    await migrateD1FfcsOwnerKey(caller.regNo, caller.ownerKey, semesterId);
+    await ensureStudentProfilesSchema();
     await upsertStudentProfile(caller.regNo, {
       display_name: caller.displayName,
       semester_id: semesterId,
@@ -433,8 +382,6 @@ socialFfcsMatchRouter.post("/ffcs-match", async (c) => {
       if (body.source !== "registered") {
         return c.json({ success: false, error: "planned_sharing_disabled", detail: { detail: "Only registered VTOP timetables can be shared." } }, 400);
       }
-      // Refresh this semester from VTOP just like /attendance. When Amaze ID is
-      // used without VTOP credentials, reuse an earlier attendance enrollment.
       let classIds: string[] = [];
       if (caller.cookies && caller.authorizedID && caller.csrf) {
         try {
@@ -451,49 +398,46 @@ socialFfcsMatchRouter.post("/ffcs-match", async (c) => {
         return c.json({
           success: false,
           error: needsVtop ? "vtop_session_required" : "no_registered_classes",
-          detail: {
-            detail: needsVtop
-              ? "Sign in with VTOP and load attendance for this semester before enrolling."
-              : "VTOP shows no registered classes for this semester yet.",
-          },
+          detail: { detail: needsVtop
+            ? "Sign in with VTOP and load attendance for this semester before enrolling."
+            : "VTOP shows no registered classes for this semester yet." },
         }, 422);
       }
 
       const discoverable = body.discoverable !== false;
       const now = Date.now();
-      const { rows: existing } = await pool.query(
-        "SELECT class_ids, changes_in_window, window_started_at FROM ffcs_match_entries WHERE owner_key = $1 AND semester_id = $2",
-        [caller.ownerKey, semesterId],
-      );
+      const existing = await readD1Match(caller.ownerKey, semesterId);
       let changesInWindow = 1;
       let windowStartedAt = now;
-      if (existing.length) {
-        const row = existing[0] as any;
-        const startedAt = new Date(row.window_started_at).getTime();
-        const unchanged = JSON.stringify([...(row.class_ids || [])].sort()) === JSON.stringify([...classIds].sort());
+      if (existing) {
+        const startedAt = new Date(existing.window_started_at).getTime();
+        const unchanged = JSON.stringify([...existing.class_ids].sort()) === JSON.stringify([...classIds].sort());
         if (now - startedAt < 86_400_000) {
-          changesInWindow = Number(row.changes_in_window) + (unchanged ? 0 : 1);
+          changesInWindow = Number(existing.changes_in_window) + (unchanged ? 0 : 1);
           windowStartedAt = startedAt;
         }
         if (changesInWindow > MAX_CHANGES_PER_DAY) {
           return c.json({ success: false, error: "change_limit", detail: { detail: "Daily change limit reached." } }, 429);
         }
       }
-      await pool.query(
-        "INSERT INTO ffcs_match_entries " +
-          "(owner_key, semester_id, class_ids, source, discoverable, register_no, display_name, changes_in_window, window_started_at) " +
-          "VALUES ($1, $2, $3::text[], 'registered', $4, $5, $6, $7, $8) " +
-          "ON CONFLICT (owner_key, semester_id) DO UPDATE SET " +
-          "class_ids = EXCLUDED.class_ids, source = EXCLUDED.source, discoverable = EXCLUDED.discoverable, " +
-          "register_no = EXCLUDED.register_no, display_name = EXCLUDED.display_name, " +
-          "changes_in_window = EXCLUDED.changes_in_window, window_started_at = EXCLUDED.window_started_at, updated_at = NOW()",
-        [caller.ownerKey, semesterId, classIds, discoverable, caller.regNo, caller.displayName, changesInWindow, new Date(windowStartedAt).toISOString()],
-      );
-      await pool.query(
-        "UPDATE ffcs_class_registrations SET discoverable = $1, display_name = $2, handle = $3, owner_key = $4, updated_at = NOW() " +
-          "WHERE semester_id = $5 AND UPPER(register_no) = $6",
-        [discoverable, caller.displayName, caller.handle, caller.ownerKey, semesterId, caller.regNo.toUpperCase()],
-      );
+      await saveD1Match({
+        ownerKey: caller.ownerKey,
+        semesterId,
+        classIds,
+        discoverable,
+        registerNo: caller.regNo,
+        displayName: caller.displayName,
+        changesInWindow,
+        windowStartedAt: new Date(windowStartedAt).toISOString(),
+      });
+      await updateD1RegistrationIdentity({
+        ownerKey: caller.ownerKey,
+        semesterId,
+        registerNo: caller.regNo,
+        displayName: caller.displayName,
+        handle: caller.handle,
+        discoverable,
+      });
       return c.json(await buildMatchState(caller, semesterId));
     }
 
@@ -501,33 +445,17 @@ socialFfcsMatchRouter.post("/ffcs-match", async (c) => {
       if (typeof body.discoverable !== "boolean") {
         return c.json({ success: false, error: "invalid_visibility", detail: { detail: "discoverable is required" } }, 400);
       }
-      const updated = await pool.query(
-        "UPDATE ffcs_match_entries SET discoverable = $1, updated_at = NOW() " +
-          "WHERE owner_key = $2 AND semester_id = $3 RETURNING owner_key",
-        [body.discoverable, caller.ownerKey, semesterId],
+      const updated = await setD1MatchVisibilityAndRegistration(
+        caller.ownerKey, semesterId, caller.regNo, body.discoverable,
       );
-      if (!updated.rows.length) {
+      if (!updated) {
         return c.json({ success: false, error: "not_joined", detail: { detail: "Share your classes first." } }, 404);
       }
-      await pool.query(
-        "UPDATE ffcs_class_registrations SET discoverable = $1, updated_at = NOW() " +
-          "WHERE semester_id = $2 AND UPPER(register_no) = $3",
-        [body.discoverable, semesterId, caller.regNo.toUpperCase()],
-      );
       return c.json(await buildMatchState(caller, semesterId));
     }
 
     if (op === "leave") {
-      await pool.query("DELETE FROM ffcs_match_entries WHERE owner_key = $1 AND semester_id = $2", [caller.ownerKey, semesterId]);
-      await pool.query(
-        "DELETE FROM ffcs_class_registrations WHERE semester_id = $1 AND UPPER(register_no) = $2",
-        [semesterId, caller.regNo.toUpperCase()],
-      );
-      await pool.query(
-        "UPDATE ffcs_classes SET register_nos = array_remove(register_nos, $1), updated_at = NOW() " +
-          "WHERE semester_id = $2 AND $1 = ANY(register_nos)",
-        [caller.regNo, semesterId],
-      );
+      await removeD1Match({ ownerKey: caller.ownerKey, semesterId, registerNo: caller.regNo });
       return c.json(await buildMatchState(caller, semesterId));
     }
 

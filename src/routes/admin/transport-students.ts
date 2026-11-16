@@ -1,6 +1,6 @@
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
 import type { BusStudentInput } from '../../types/transport';
+import { ensureTransportInD1 } from '../../lib/transportD1';
 
 
 export async function POST(req: Request) {
@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const pool = getDbPool();
+    const db = await ensureTransportInD1();
     const body = await (req.json() as any);
     const students: BusStudentInput[] = body.students || body;
 
@@ -24,31 +24,18 @@ export async function POST(req: Request) {
       return Response.json({ success: false, error: 'routeNumber is required for each student' }, { status: 400 });
     }
 
-    const { rows: route } = await pool.query('SELECT id FROM buses_v2 WHERE route_number = $1', [routeNumber]);
-    if (route.length === 0) {
+    const route = await db.prepare('SELECT id FROM buses_v2 WHERE route_number = ?')
+      .bind(routeNumber).first<{ id: number }>();
+    if (!route) {
       return Response.json({ success: false, error: 'Route not found' }, { status: 404 });
     }
-    const routeId = route[0].id;
+    const routeId = route.id;
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('DELETE FROM bus_students WHERE route_id = $1', [routeId]);
-
-      for (const s of students) {
-        await client.query(
-          `INSERT INTO bus_students (route_id, registration_number, application_number, destination)
-           VALUES ($1, $2, $3, $4)`,
-          [routeId, s.registrationNumber, s.applicationNumber || '', s.destination || '']
-        );
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    await db.prepare('DELETE FROM bus_students WHERE route_id = ?').bind(routeId).run();
+    const statements = students.map((student) => db.prepare(`INSERT INTO bus_students
+      (route_id, registration_number, application_number, destination) VALUES (?, ?, ?, ?)`)
+      .bind(routeId, student.registrationNumber, student.applicationNumber || '', student.destination || ''));
+    for (let index = 0; index < statements.length; index += 80) await db.batch(statements.slice(index, index + 80));
 
     return Response.json({ success: true, message: `Inserted ${students.length} students for route ${routeNumber}` });
   } catch (error: unknown) {
@@ -65,7 +52,7 @@ export async function DELETE(req: Request) {
   }
 
   try {
-    const pool = getDbPool();
+    const db = await ensureTransportInD1();
     const url = new URL(req.url);
     const routeId = parseInt(url.searchParams.get('routeId') || '', 10);
 
@@ -73,7 +60,7 @@ export async function DELETE(req: Request) {
       return Response.json({ success: false, error: 'routeId query parameter is required' }, { status: 400 });
     }
 
-    const { rowCount } = await pool.query('DELETE FROM bus_students WHERE route_id = $1', [routeId]);
+    const rowCount = (await db.prepare('DELETE FROM bus_students WHERE route_id = ?').bind(routeId).run()).meta.changes ?? 0;
     return Response.json({ success: true, message: `Deleted ${rowCount} students for route ${routeId}` });
   } catch (error: unknown) {
     console.error('Failed to delete students:', error);

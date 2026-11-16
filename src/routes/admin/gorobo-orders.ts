@@ -1,4 +1,5 @@
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema, GOROBO_ORDER_STATUSES } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { ORDER_SELECT, mapOrderRow, type GoroboOrderRow, parseQuoteBody, QuoteValidationError } from "../../lib/gorobo/orders";
@@ -17,7 +18,7 @@ export async function GET(req: Request) {
     const status = searchParams.get("status")?.trim() || "";
     const search = searchParams.get("search")?.trim() || "";
 
-    const pool = getDbPool();
+    const db = getAppDataDb();
     const conditions: string[] = [];
     const params: string[] = [];
     if (status) {
@@ -32,14 +33,14 @@ export async function GET(req: Request) {
     }
     if (search) {
       params.push(`%${search}%`);
-      conditions.push(`(user_name ILIKE $${params.length} OR phone_number ILIKE $${params.length} OR id::text ILIKE $${params.length})`);
+      conditions.push(`(user_name LIKE $${params.length} OR phone_number LIKE $${params.length} OR id LIKE $${params.length})`);
     }
 
     let query = ORDER_SELECT;
     if (conditions.length) query += ` WHERE ${conditions.join(" AND ")}`;
     query += ` ORDER BY created_at DESC LIMIT 500`;
 
-    const { rows } = await pool.query<GoroboOrderRow>(query, params);
+    const { rows } = await db.query<GoroboOrderRow>(query, params);
     const orders = rows.map(mapOrderRow);
     return Response.json({ success: true, count: orders.length, orders });
   } catch (error: unknown) {
@@ -80,9 +81,9 @@ export async function POST(req: Request) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const parsed = await parseQuoteBody(body, pool);
+    const parsed = await parseQuoteBody(body, db);
     const quote = computeQuote({
       lines: parsed.lines,
       discountPct: parsed.discountPct,
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
       shipmentCost: parsed.shipmentCost,
     });
 
-    const { rows } = await pool.query<GoroboOrderRow>(
+    const { rows } = await db.query<GoroboOrderRow>(
       `INSERT INTO gorobo_orders (
         user_name, phone_number, items, total, status, subtotal,
         discount_pct, discount_amount, gst_pct, gst_amount,
@@ -121,10 +122,10 @@ export async function POST(req: Request) {
     if (status === "confirmed" || status === "completed" || status === "processing" || status === "ready") {
       for (const line of parsed.lines) {
         if (line.itemId && !line.custom) {
-          await pool.query(
+          await db.query(
             `UPDATE gorobo_items
-             SET stock_quantity = GREATEST(0, stock_quantity - $1),
-                 in_stock = (GREATEST(0, stock_quantity - $1) > 0)
+             SET stock_quantity = MAX(0, stock_quantity - $1),
+                 in_stock = (MAX(0, stock_quantity - $1) > 0)
              WHERE id = $2`,
             [line.quantity, line.itemId]
           ).catch(() => {});

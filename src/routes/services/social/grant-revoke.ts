@@ -6,8 +6,8 @@
  */
 import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { identifyCaller, ensureSocialSchema, SOCIAL_TABLE } from "../../../../src/lib/social";
-import { getDbPool } from "../../../../src/lib/db";
+import { identifyCaller, SOCIAL_TABLE } from "../../../../src/lib/social";
+import { ensureSocialInD1 } from "../../../../src/lib/socialD1";
 
 export const socialGrantRevokeRouter = new Hono();
 
@@ -33,19 +33,12 @@ socialGrantRevokeRouter.post("/grant/revoke", async (c) => {
         { success: false, error: "missing_grant_reference", detail: { detail: "grantId is required" } }, 400);
     }
 
-    await ensureSocialSchema();
-    const pool = getDbPool();
-
-    const { rows } = await pool.query(
-      `SELECT * FROM ${SOCIAL_TABLE} WHERE grant_id = $1`,
-      [body.grantId],
-    );
-    if (!rows.length) {
+    const db = await ensureSocialInD1();
+    const grant = await db.prepare(`SELECT * FROM ${SOCIAL_TABLE} WHERE grant_id = ?`).bind(body.grantId).first<any>();
+    if (!grant) {
       return c.json(
         { success: false, error: "grant_not_found", detail: { detail: "Grant not found" } }, 404);
     }
-    const grant = rows[0] as any;
-
     const callerKey = result.caller.ownerKey;
     const isParticipant = grant.owner_a === callerKey || grant.owner_b === callerKey;
     if (!isParticipant) {
@@ -53,10 +46,8 @@ socialGrantRevokeRouter.post("/grant/revoke", async (c) => {
         { success: false, error: "not_a_participant", detail: { detail: "Caller is not a grant participant" } }, 403);
     }
 
-    await pool.query(
-      `UPDATE ${SOCIAL_TABLE} SET revoked_at = NOW() WHERE grant_id = $1`,
-      [body.grantId],
-    );
+    await db.prepare(`UPDATE ${SOCIAL_TABLE} SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE grant_id = ?`)
+      .bind(body.grantId).run();
 
     return c.json({ success: true, grantId: body.grantId, revoked: true });
   } catch (err: unknown) {

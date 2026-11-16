@@ -12,7 +12,7 @@
 import { Hono } from "hono";
 import { vtopPostForm, readText, cookieHeader, formParams } from "./vtop";
 import { parseStudentProfile } from "./parsers/student-profile";
-import { getDbPool } from "./db";
+import { getWorkerEnv } from "../env";
 import { publicErrorMessage } from "./publicError";
 import { upsertStudentProfile, getStudentProfileByRegNo } from "./student-profiles";
 import { hash, identityHash, normalizeRegisterNo } from "./generator";
@@ -22,6 +22,7 @@ export const TIMETABLE_TABLE = "social_timetables";
 export const FFCS_MATCH_TABLE = "ffcs_match_entries";
 export const FFCS_CLASSES_TABLE = "ffcs_classes";
 export const FFCS_CLASS_REGISTRATIONS_TABLE = "ffcs_class_registrations";
+export const SOCIAL_HANDLE_ALIASES_TABLE = "social_handle_aliases";
 
 export type CallerIdentity = {
   ownerKey: string;
@@ -159,245 +160,25 @@ export async function identifyCaller(body: {
 
 /** Ensure all social tables exist. Safe to call on every request. */
 export async function ensureSocialSchema(): Promise<void> {
-  const pool = getDbPool();
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${SOCIAL_TABLE} (
-      grant_id   TEXT PRIMARY KEY,
-      owner_a    TEXT NOT NULL,
-      owner_b    TEXT NOT NULL,
-      secret_hash TEXT NOT NULL,
-      visibility TEXT NOT NULL DEFAULT 'coarse',
-      revoked_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS social_grants_secret_hash_idx ON ${SOCIAL_TABLE} (secret_hash);
-    CREATE INDEX IF NOT EXISTS social_grants_owner_a_idx ON ${SOCIAL_TABLE} (owner_a);
-    CREATE INDEX IF NOT EXISTS social_grants_owner_b_idx ON ${SOCIAL_TABLE} (owner_b);
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${TIMETABLE_TABLE} (
-      owner_key         TEXT NOT NULL,
-      semester_id       TEXT NOT NULL,
-      version           INTEGER NOT NULL DEFAULT 1,
-      busy_map          JSONB NOT NULL DEFAULT '{}'::jsonb,
-      courses           JSONB NOT NULL DEFAULT '[]'::jsonb,
-      slotmap_version   TEXT NOT NULL,
-      register_no       TEXT NOT NULL DEFAULT '',
-      display_name      TEXT NOT NULL DEFAULT '',
-      published_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      client_updated_at TIMESTAMPTZ,
-      PRIMARY KEY (owner_key, semester_id)
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${FFCS_MATCH_TABLE} (
-      owner_key          TEXT NOT NULL,
-      semester_id        TEXT NOT NULL,
-      class_ids          TEXT[] NOT NULL DEFAULT '{}',
-      source             TEXT NOT NULL CHECK (source IN ('planned', 'registered')),
-      discoverable       BOOLEAN NOT NULL DEFAULT TRUE,
-      changes_in_window  INTEGER NOT NULL DEFAULT 0,
-      window_started_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      register_no        TEXT NOT NULL DEFAULT '',
-      display_name       TEXT NOT NULL DEFAULT '',
-      PRIMARY KEY (owner_key, semester_id)
-    );
-    CREATE INDEX IF NOT EXISTS ffcs_match_entries_class_ids_gin
-      ON ${FFCS_MATCH_TABLE} USING GIN (class_ids);
-    CREATE UNIQUE INDEX IF NOT EXISTS ffcs_match_entries_sem_reg_unique
-      ON ${FFCS_MATCH_TABLE} (semester_id, register_no) WHERE register_no <> '';
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${FFCS_CLASSES_TABLE} (
-      semester_id   TEXT NOT NULL,
-      class_id      TEXT NOT NULL,
-      course_code   TEXT NOT NULL DEFAULT '',
-      course_title  TEXT NOT NULL DEFAULT '',
-      course_type   TEXT NOT NULL DEFAULT '',
-      slot          TEXT NOT NULL DEFAULT '',
-      faculty       TEXT NOT NULL DEFAULT '',
-      credits       TEXT NOT NULL DEFAULT '',
-      room          TEXT NOT NULL DEFAULT '',
-      register_nos  TEXT[] NOT NULL DEFAULT '{}',
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (semester_id, class_id)
-    );
-    CREATE INDEX IF NOT EXISTS ffcs_classes_sem_class_idx
-      ON ${FFCS_CLASSES_TABLE} (semester_id, class_id);
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${FFCS_CLASS_REGISTRATIONS_TABLE} (
-      semester_id   TEXT NOT NULL,
-      class_id      TEXT NOT NULL,
-      register_no   TEXT NOT NULL,
-      display_name  TEXT NOT NULL DEFAULT '',
-      handle        TEXT NOT NULL DEFAULT '',
-      owner_key     TEXT NOT NULL,
-      discoverable  BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (semester_id, class_id, register_no)
-    );
-    CREATE INDEX IF NOT EXISTS ffcs_class_registrations_sem_reg_idx
-      ON ${FFCS_CLASS_REGISTRATIONS_TABLE} (semester_id, register_no);
-    CREATE INDEX IF NOT EXISTS ffcs_class_registrations_sem_class_idx
-      ON ${FFCS_CLASS_REGISTRATIONS_TABLE} (semester_id, class_id);
-  `);
-
+  if (!getWorkerEnv().APP_DB) throw new Error("APP_DB is not configured");
 }
 
-/**
- * Move one verified student's old plaintext owner key to identityHash(reg_no).
- * Keep this out of ensureSocialSchema: scanning every social table during schema
- * initialization makes normal requests scale with the entire user base.
- */
-export async function migrateLegacyOwnerKeyForRegister(regNo: string): Promise<void> {
+/** Return every known AMZ-… handle for one verified VTOP registration number. */
+export async function getSocialHandlesForRegister(regNo: string): Promise<string[]> {
   const normalized = normalizeRegisterNo(regNo);
-  if (!normalized) return;
-  const newKey = identityHash(normalized);
-  const client = await getDbPool().connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(
-      "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
-      [`canonical_register_owner_key:${newKey}`],
-    );
-
-    const sources = [
-      { table: "social_people", registerColumn: "register_no" },
-      { table: TIMETABLE_TABLE, registerColumn: "register_no" },
-      { table: FFCS_MATCH_TABLE, registerColumn: "register_no" },
-      { table: FFCS_CLASS_REGISTRATIONS_TABLE, registerColumn: "register_no" },
-    ] as const;
-    const tables = new Set<string>();
-    const oldKeys = new Set<string>([normalized]);
-
-    for (const source of sources) {
-      const exists = await client.query<{ table_name: string | null }>(
-        "SELECT to_regclass($1)::text AS table_name",
-        [source.table],
-      );
-      if (!exists.rows[0]?.table_name) continue;
-      tables.add(source.table);
-      const { rows } = await client.query<{ owner_key: string | null }>(
-        `SELECT DISTINCT owner_key FROM ${source.table}
-          WHERE UPPER(${source.registerColumn}) = $1 AND owner_key <> $2`,
-        [normalized, newKey],
-      );
-      for (const row of rows) if (row.owner_key) oldKeys.add(row.owner_key);
-    }
-
-    for (const table of ["social_grants", "service_enrollments"] as const) {
-      const exists = await client.query<{ table_name: string | null }>(
-        "SELECT to_regclass($1)::text AS table_name",
-        [table],
-      );
-      if (exists.rows[0]?.table_name) tables.add(table);
-    }
-
-    for (const oldKey of oldKeys) {
-      if (!oldKey || oldKey === newKey) continue;
-      if (tables.has("social_people")) {
-        // A canonical profile may already exist (e.g. after a prior sign-in
-        // created it). Keep that row and discard only the duplicate old key.
-        await client.query(
-          `DELETE FROM social_people AS old
-            WHERE old.owner_key = $1
-              AND EXISTS (SELECT 1 FROM social_people AS current WHERE current.owner_key = $2)`,
-          [oldKey, newKey],
-        );
-        await client.query("UPDATE social_people SET owner_key = $2 WHERE owner_key = $1", [oldKey, newKey]);
-      }
-      if (tables.has(TIMETABLE_TABLE)) {
-        await client.query(
-          `DELETE FROM ${TIMETABLE_TABLE} AS old
-            WHERE old.owner_key = $1
-              AND EXISTS (
-                SELECT 1 FROM ${TIMETABLE_TABLE} AS current
-                 WHERE current.owner_key = $2 AND current.semester_id = old.semester_id
-              )`,
-          [oldKey, newKey],
-        );
-        await client.query(`UPDATE ${TIMETABLE_TABLE} SET owner_key = $2 WHERE owner_key = $1`, [oldKey, newKey]);
-      }
-      if (tables.has(FFCS_MATCH_TABLE)) {
-        await client.query(
-          `UPDATE ${FFCS_MATCH_TABLE} AS current
-              SET class_ids = ARRAY(
-                    SELECT DISTINCT merged.class_id
-                      FROM UNNEST(current.class_ids || old.class_ids) AS merged(class_id)
-                  ),
-                  discoverable = current.discoverable OR old.discoverable,
-                  updated_at = GREATEST(current.updated_at, old.updated_at)
-             FROM ${FFCS_MATCH_TABLE} AS old
-            WHERE current.owner_key = $2 AND old.owner_key = $1
-              AND current.semester_id = old.semester_id`,
-          [oldKey, newKey],
-        );
-        await client.query(
-          `DELETE FROM ${FFCS_MATCH_TABLE} AS old
-            WHERE old.owner_key = $1
-              AND EXISTS (
-                SELECT 1 FROM ${FFCS_MATCH_TABLE} AS current
-                 WHERE current.owner_key = $2 AND current.semester_id = old.semester_id
-              )`,
-          [oldKey, newKey],
-        );
-        await client.query(`UPDATE ${FFCS_MATCH_TABLE} SET owner_key = $2 WHERE owner_key = $1`, [oldKey, newKey]);
-      }
-      if (tables.has(FFCS_CLASS_REGISTRATIONS_TABLE)) {
-        await client.query(
-          `UPDATE ${FFCS_CLASS_REGISTRATIONS_TABLE} SET owner_key = $2 WHERE owner_key = $1`,
-          [oldKey, newKey],
-        );
-      }
-      if (tables.has("social_grants")) {
-        // Keep an already-canonical grant if both old and canonical identity
-        // rows represent the same pair; otherwise the pair's unique index
-        // rejects the re-key.
-        await client.query(
-          `DELETE FROM social_grants AS old
-            WHERE (old.owner_a = $1 OR old.owner_b = $1)
-              AND EXISTS (
-                SELECT 1 FROM social_grants AS current
-                 WHERE current.grant_id <> old.grant_id
-                   AND current.owner_a = CASE WHEN old.owner_a = $1 THEN $2 ELSE old.owner_a END
-                   AND current.owner_b = CASE WHEN old.owner_b = $1 THEN $2 ELSE old.owner_b END
-              )`,
-          [oldKey, newKey],
-        );
-        await client.query("UPDATE social_grants SET owner_a = $2 WHERE owner_a = $1", [oldKey, newKey]);
-        await client.query("UPDATE social_grants SET owner_b = $2 WHERE owner_b = $1", [oldKey, newKey]);
-      }
-      if (tables.has("service_enrollments")) {
-        await client.query(
-          `DELETE FROM service_enrollments AS old
-            WHERE old.owner_key = $1
-              AND EXISTS (
-                SELECT 1 FROM service_enrollments AS current
-                 WHERE current.owner_key = $2 AND current.service = old.service
-              )`,
-          [oldKey, newKey],
-        );
-        await client.query("UPDATE service_enrollments SET owner_key = $2 WHERE owner_key = $1", [oldKey, newKey]);
-      }
-    }
-
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw error;
-  } finally {
-    await client.release();
-  }
+  if (!normalized) return [];
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  const [aliases, people] = await Promise.all([
+    db.prepare(`SELECT handle FROM ${SOCIAL_HANDLE_ALIASES_TABLE}
+      WHERE register_no = ? ORDER BY created_at ASC, handle ASC`)
+      .bind(normalized).all<{ handle: string }>(),
+    db.prepare(`SELECT handle FROM social_people WHERE UPPER(register_no) = ? ORDER BY created_at ASC, handle ASC`)
+      .bind(normalized).all<{ handle: string }>(),
+  ]);
+  const handles = new Set([...aliases.results, ...people.results].map((row) => row.handle).filter(Boolean));
+  handles.add(generateHandle(normalized));
+  return [...handles];
 }
 
 export type SocialCourse = {

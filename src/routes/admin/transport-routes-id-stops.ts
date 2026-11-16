@@ -1,6 +1,6 @@
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
 import type { BusStop } from '../../types/transport';
+import { ensureTransportInD1 } from '../../lib/transportD1';
 
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -11,15 +11,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const pool = getDbPool();
+    const db = await ensureTransportInD1();
     const { id } = await params;
     const routeId = parseInt(id, 10);
     if (isNaN(routeId)) {
       return Response.json({ success: false, error: 'Invalid route ID' }, { status: 400 });
     }
 
-    const { rows: route } = await pool.query('SELECT id FROM buses_v2 WHERE id = $1', [routeId]);
-    if (route.length === 0) {
+    const route = await db.prepare('SELECT id FROM buses_v2 WHERE id = ?').bind(routeId).first();
+    if (!route) {
       return Response.json({ success: false, error: 'Route not found' }, { status: 404 });
     }
 
@@ -28,10 +28,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return Response.json({ success: false, error: 'Expected an array of stops' }, { status: 400 });
     }
 
-    await pool.query(
-      'UPDATE buses_v2 SET stops = $1::jsonb, updated_at = now() WHERE id = $2',
-      [JSON.stringify(stops), routeId]
-    );
+    await db.prepare(`UPDATE buses_v2 SET stops = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`)
+      .bind(JSON.stringify(stops), routeId).run();
 
     return Response.json({ success: true, message: 'Stops updated successfully' });
   } catch (error: unknown) {

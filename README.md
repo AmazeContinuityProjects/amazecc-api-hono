@@ -1,6 +1,6 @@
 # amazecc-api-hono
 
-The optimized rewrite of the AmazeCC API for **Cloudflare Workers + Queues**.
+The optimized rewrite of the AmazeCC API for **Cloudflare Workers**.
 No Next.js, no axios, no `node-canvas`, no Node TLS hacks — Hono on raw Web
 APIs with a small, deliberate dependency set, targeting a **10 ms CPU budget
 per request** (Cloudflare's free-tier limit).
@@ -46,7 +46,7 @@ No keys are needed for the native binding.
 
 ## Environment
 
-See `.env.example` — account/zone, bindings (D1, Hyperdrive, queue), and the secrets you must track. `.env` (gitignored) holds local dev values; production bindings live in `wrangler.jsonc` + `wrangler secret put`.
+See `.env.example` — account/zone, D1 bindings, and the secrets you must track. `.env` (gitignored) holds local development and migration values; production bindings live in `wrangler.jsonc` + `wrangler secret put`.
 
 ---
 
@@ -68,17 +68,18 @@ src/
     crypto.ts         WebCrypto HMAC/base64url (timing-safe)
     auth.ts           admin + service HMAC tokens (legacy-compatible format)
     clubAuth.ts       club-rep tokens (typ "club")
-    db.ts             Hyperdrive → pg (local fallback: DATABASE_URL)
+    sqlCompat.ts      SQL compatibility adapter backed by APP_DB (D1)
     marksStats.ts     Welford cohort stats (class_user_marks, no values stored)
     services.ts       service registry + unified enrollment (service_enrollments)
-    syncClubs.ts      daily VTOP club sync — run via the SYNC_QUEUE consumer
     webpush.ts        RFC 8291/8292 Web Push on WebCrypto
     parsers/*         cheerio + htmlparser2 parsers (ported 1:1)
 ```
 
-**Dependencies (runtime, complete):** `hono` · `pg` (Hyperdrive) ·
+**Dependencies (runtime, complete):** `hono` ·
 `cheerio` · `htmlparser2`/`css-select`/`domhandler`/`domutils` ·
 `jpeg-js` · `pngjs` · `aws4fetch` (reserved for qbank pass).
+`pg` is a development dependency used only by `scripts/backfill-d1.mjs` to read
+the Postgres migration source; request handlers use D1 through `APP_DB`.
 Bundle ≈ **2.3 MB raw / 462 KB gzip**.
 
 ## What's where (full route map)
@@ -87,7 +88,7 @@ Bundle ≈ **2.3 MB raw / 462 KB gzip**.
 
 | Route | Port of | Notes |
 |---|---|---|
-| `POST /api/remote/login` | `/api/login` | captcha solved in-worker; enqueues daily club sync to `SYNC_QUEUE` |
+| `POST /api/remote/login` | `/api/login` | captcha solved in-worker; returns VTOP session credentials |
 | `POST /api/remote/whoami` | `/api/whoami` | 10 sequential page scrapes, identity merged |
 | `POST /api/remote/attendance` | `/api/attendance` | cheerio variant |
 | `POST /api/remote/grades` | `/api/grades` | overall + semester history |
@@ -173,22 +174,23 @@ Current registry (`src/lib/services.ts`): `marks-stats`.
 
 ---
 
-## Hyperdrive + Supabase (learned the hard way)
+## Postgres source and D1 migration
 
-For Supabase, create the Hyperdrive against the **direct** connection host
-(`db.<project-ref>.supabase.co:5432`, user `postgres`), **not** the
-transaction pooler (`aws-N-<region>.pooler.supabase.com:6543`). Queries routed
-through the pooler via Hyperdrive **never return and never error** — the
-connection handshakes fine (~20 ms) and the query bytes are never relayed back
-(observed as requests that time out at 25–125 s with zero worker logs). The
-`postgres.<ref>` pooler user format is additionally pooler-only and is not
-valid on the direct host.
+The current worktree's request handlers use the dedicated `amazecc-api` D1
+database through `APP_DB`; `AUTH_DB` stays isolated for shared Amaze ID data.
+Historical Postgres data is not being copied. Runtime endpoints use the rows
+already present in D1, and no longer depend on migration markers. The old
+backfill script remains unused; do not invoke it with `--apply`.
+
+This worktree no longer binds Hyperdrive, but it has not been deployed. The
+deployed Worker remains on its previous version until a separate deployment.
+See [D1 runtime notes](D1_MIGRATION.md) for the current route and binding
+status.
 
 ## Production state (deployed)
 
-- **Worker**: `https://amazecc-api-hono.sugeethjayaraj2007.workers.dev` — all routes live
-- **Hyperdrive** `amazecc-db-direct` → `db.<project-ref>.supabase.co:5432` — serving real queries
-  (e.g. `faculty/schools` ~600 ms)
+- **Worker**: `https://amazecc-api-hono.sugeethjayaraj2007.workers.dev` — previously deployed version
+- The current worktree binds `APP_DB` and `AUTH_DB`; the deployed version has not been replaced yet.
 - **Queues**: `amazecc-sync` + consumer + `amazecc-sync-dlq`
 - **Secrets**: ADMIN_SECRET · GENERATOR_KEY · ADMIN_VTOP_IDS · VAPID keys (all pushed)
 - **Verified end-to-end**: VTOP login/captcha from the edge ✓, admin auth + real DB counts ✓,
@@ -198,8 +200,6 @@ valid on the direct host.
 pnpm install
 wrangler queues create amazecc-sync
 wrangler queues create amazecc-sync-dlq
-wrangler hyperdrive create amazecc-db-direct --connection-string="postgresql://postgres:…@db.<project-ref>.supabase.co:5432/postgres"
-#   → paste the id into wrangler.jsonc "hyperdrive"
 wrangler secret put ADMIN_SECRET          # service-token signing key
 wrangler secret put GENERATOR_KEY         # required for keyed hashes and pseudonyms
 wrangler secret put ADMIN_VTOP_IDS        # optional superadmin list
@@ -208,11 +208,11 @@ wrangler secret put VAPID_PRIVATE_KEY              # admin push
 wrangler deploy
 ```
 
-Local dev (port 3100) needs **no** Hyperdrive/queues:
+Local dev (port 3100) uses Wrangler's local D1 databases:
 
 ```bash
-DATABASE_URL=postgresql://… pnpm dev
-# or: cp .env.example .dev.vars   (ADMIN_SECRET / GENERATOR_KEY / ADMIN_VTOP_IDS, no HF binding)
+pnpm exec wrangler d1 migrations apply amazecc-api --local
+pnpm dev
 ```
 
 `npx wrangler deploy --dry-run` passes. Verified matrix: VTOP TLS + captcha
@@ -229,9 +229,6 @@ authenticated admin 200.
 - **Scraping stays inline** (the client needs the answer ASAP). Network wait
   doesn't count against the 10 ms CPU; parsing does — the hot scrapers use
   route-specific parsers (same parsers as before, O(small doc)).
-- **Background work goes to the queue**: the daily club sync (enqueued by
-  login) runs in the `SYNC_QUEUE` consumer. Cron-style jobs can use the same
-  queue when `/api/cron/*` is ported.
 - **`waiver`**: routes that scrape 10+ pages (`whoami`, `grades`, `ffcs
   all`) are I/O-bound but CPU-heavy; if your plan has a strict 10 ms CPU
   ceiling they may exceed it — htmlparser2-fy their parsers first, or raise

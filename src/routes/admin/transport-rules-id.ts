@@ -1,5 +1,5 @@
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
+import { ensureTransportInD1 } from '../../lib/transportD1';
 
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,15 +10,15 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   try {
-    const pool = getDbPool();
+    const db = await ensureTransportInD1();
     const { id: ruleId } = await params;
     const id = parseInt(ruleId, 10);
     if (isNaN(id)) {
       return Response.json({ success: false, error: 'Invalid rule ID' }, { status: 400 });
     }
 
-    const { rowCount } = await pool.query('DELETE FROM transport_rules WHERE id = $1', [id]);
-    if (rowCount === 0) {
+    const deleted = (await db.prepare('DELETE FROM transport_rules WHERE id = ?').bind(id).run()).meta.changes ?? 0;
+    if (deleted === 0) {
       return Response.json({ success: false, error: 'Rule not found' }, { status: 404 });
     }
 

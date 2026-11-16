@@ -8,7 +8,7 @@
 import { Hono } from "hono";
 import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_BLOCKS_TABLE, CABSHARE_MATCH_EVENTS_TABLE, CABSHARE_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { getDbPool } from "../../../../src/lib/db";
+import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareMatchRouter = new Hono();
 
@@ -46,7 +46,8 @@ cabshareMatchRouter.post("/match", async (c) => {
       );
     }
 
-    const pool = getDbPool();
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
 
     if (body.action === "request") {
       if (!body.trip_id) {
@@ -55,17 +56,15 @@ cabshareMatchRouter.post("/match", async (c) => {
           400,
         );
       }
-      const { rows: tripRows } = await pool.query(
-        `SELECT user_id FROM ${CABSHARE_TRIPS_TABLE} WHERE trip_id = $1`,
-        [body.trip_id],
-      );
-      if (!tripRows.length) {
+      const trip = await appDb.prepare(`SELECT user_id FROM ${CABSHARE_TRIPS_TABLE} WHERE trip_id = ?`)
+        .bind(body.trip_id).first<{ user_id: number }>();
+      if (!trip) {
         return c.json(
           { success: false, error: "Trip not found" },
           404,
         );
       }
-      const tripOwnerId = Number(tripRows[0].user_id);
+      const tripOwnerId = Number(trip.user_id);
       if (tripOwnerId === userId) {
         return c.json(
           { success: false, error: "Cannot request your own trip" },
@@ -73,24 +72,18 @@ cabshareMatchRouter.post("/match", async (c) => {
         );
       }
       // Check mutual block
-      const { rows: blockRows } = await pool.query(
-        `SELECT 1 FROM ${CABSHARE_BLOCKS_TABLE}
-         WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)
-         LIMIT 1`,
-        [userId, tripOwnerId],
-      );
+      const blockRows = (await appDb.prepare(`SELECT 1 FROM ${CABSHARE_BLOCKS_TABLE}
+            WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?) LIMIT 1`)
+          .bind(userId, tripOwnerId, tripOwnerId, userId).all()).results;
       if (blockRows.length) {
         return c.json(
           { success: false, error: "Cannot request this trip" },
           403,
         );
       }
-      await pool.query(
-        `INSERT INTO ${CABSHARE_MATCH_EVENTS_TABLE} (trip_id, requester_id, owner_id, status)
-         VALUES ($1, $2, $3, 'pending')
-         ON CONFLICT DO NOTHING`,
-        [body.trip_id, userId, tripOwnerId],
-      );
+      await appDb.prepare(`INSERT INTO ${CABSHARE_MATCH_EVENTS_TABLE}
+          (trip_id, requester_id, owner_id, status) VALUES (?, ?, ?, 'pending') ON CONFLICT DO NOTHING`)
+        .bind(body.trip_id, userId, tripOwnerId).run();
       return c.json({ success: true, message: "Request sent" }, 200);
     }
 
@@ -102,14 +95,12 @@ cabshareMatchRouter.post("/match", async (c) => {
     }
 
     if (body.action === "accept" || body.action === "reject") {
-      const { rows: matchRows } = await pool.query(
-        `SELECT m.owner_id, m.requester_id, u1.phone_number as requester_phone, u2.phone_number as owner_phone
-         FROM ${CABSHARE_MATCH_EVENTS_TABLE} m
-         JOIN ${CABSHARE_TABLE} u1 ON m.requester_id = u1.user_id
-         JOIN ${CABSHARE_TABLE} u2 ON m.owner_id = u2.user_id
-         WHERE m.id = $1`,
-        [body.match_id],
-      );
+      const matchRows = (await appDb.prepare(`SELECT m.owner_id, m.requester_id, u1.phone_number as requester_phone,
+              u2.phone_number as owner_phone
+            FROM ${CABSHARE_MATCH_EVENTS_TABLE} m
+            JOIN ${CABSHARE_TABLE} u1 ON m.requester_id = u1.user_id
+            JOIN ${CABSHARE_TABLE} u2 ON m.owner_id = u2.user_id WHERE m.id = ?`)
+          .bind(body.match_id).all<any>()).results;
       if (!matchRows.length) {
         return c.json(
           { success: false, error: "Match not found" },
@@ -122,10 +113,8 @@ cabshareMatchRouter.post("/match", async (c) => {
           403,
         );
       }
-      await pool.query(
-        `UPDATE ${CABSHARE_MATCH_EVENTS_TABLE} SET status = $1 WHERE id = $2`,
-        [body.action === "accept" ? "accepted" : "rejected", body.match_id],
-      );
+      await appDb.prepare(`UPDATE ${CABSHARE_MATCH_EVENTS_TABLE} SET status = ? WHERE id = ?`)
+        .bind(body.action === "accept" ? "accepted" : "rejected", body.match_id).run();
 
       if (body.action === "accept") {
         const requester = matchRows[0];
@@ -162,18 +151,11 @@ cabshareMatchRouter.post("/match", async (c) => {
     }
 
     if (body.action === "withdraw") {
-      const { rows: matchRows } = await pool.query(
-        `SELECT 1 FROM ${CABSHARE_MATCH_EVENTS_TABLE}
-         WHERE (trip_id = $1 AND requester_id = $2) OR (id = $2 AND requester_id = $2)`,
-        [body.trip_id, userId],
-      );
       // withdraw by match_id or trip_id
       const matchId = body.match_id ?? body.trip_id;
-      await pool.query(
-        `UPDATE ${CABSHARE_MATCH_EVENTS_TABLE} SET status = 'withdrawn'
-         WHERE (id = $1 OR trip_id = $1) AND requester_id = $2`,
-        [matchId, userId],
-      );
+      await appDb.prepare(`UPDATE ${CABSHARE_MATCH_EVENTS_TABLE} SET status = 'withdrawn'
+          WHERE (id = ? OR trip_id = ?) AND requester_id = ?`)
+        .bind(matchId, matchId, userId).run();
       return c.json({ success: true, message: "Request withdrawn" }, 200);
     }
 

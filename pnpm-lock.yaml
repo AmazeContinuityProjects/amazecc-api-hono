@@ -190,9 +190,6 @@ importers:
       jpeg-js:
         specifier: ^0.4.4
         version: 0.4.4
-      pg:
-        specifier: ^8.21.0
-        version: 8.23.1
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
@@ -218,6 +215,9 @@ importers:
       '@types/pngjs':
         specifier: ^6.0.5
         version: 6.0.5
+      pg:
+        specifier: ^8.21.0
+        version: 8.23.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

@@ -7,7 +7,7 @@
 import { Hono } from "hono";
 import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_NOTIFICATIONS_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { getDbPool } from "../../../../src/lib/db";
+import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareNotificationsRouter = new Hono();
 
@@ -19,14 +19,10 @@ cabshareNotificationsRouter.get("/notifications", async (c) => {
     await ensureCabshareSchema();
     const user = await ensureCabshareUser(regNo);
 
-    const pool = getDbPool();
-    const { rows } = await pool.query(
-      `SELECT * FROM ${CABSHARE_NOTIFICATIONS_TABLE}
-       WHERE user_id = $1
-       ORDER BY created_at DESC
-       LIMIT 50`,
-      [user.user_id],
-    );
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
+    const rows = (await appDb.prepare(`SELECT * FROM ${CABSHARE_NOTIFICATIONS_TABLE}
+      WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`).bind(user.user_id).all()).results;
 
     return c.json({ success: true, notifications: rows }, 200);
   } catch (err: unknown) {
@@ -50,17 +46,14 @@ cabshareNotificationsRouter.patch("/notifications", async (c) => {
       notif_id?: string | number;
     };
 
-    const pool = getDbPool();
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
     if (body.notif_id === "all") {
-      await pool.query(
-        `UPDATE ${CABSHARE_NOTIFICATIONS_TABLE} SET is_read = TRUE WHERE user_id = $1`,
-        [user.user_id],
-      );
+      await appDb.prepare(`UPDATE ${CABSHARE_NOTIFICATIONS_TABLE} SET is_read = 1 WHERE user_id = ?`)
+        .bind(user.user_id).run();
     } else if (body.notif_id) {
-      await pool.query(
-        `UPDATE ${CABSHARE_NOTIFICATIONS_TABLE} SET is_read = TRUE WHERE notif_id = $1 AND user_id = $2`,
-        [body.notif_id, user.user_id],
-      );
+      await appDb.prepare(`UPDATE ${CABSHARE_NOTIFICATIONS_TABLE} SET is_read = 1 WHERE notif_id = ? AND user_id = ?`)
+        .bind(body.notif_id, user.user_id).run();
     }
 
     return c.json({ success: true, message: "Marked as read" }, 200);

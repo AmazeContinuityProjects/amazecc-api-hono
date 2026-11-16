@@ -1,5 +1,5 @@
 import { requireClubAuth } from "../../lib/clubAuth";
-import { getDbPool } from "../../lib/db";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { migrateLegacyPromotions } from "../../lib/promoteHash";
 
 /** Port of src/app/api/club-admin/feed/route.ts. */
@@ -8,9 +8,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const club_id = searchParams.get("club_id");
     const vtop_id = searchParams.get("vtop_id");
-    const pool = getDbPool();
+    const db = getAppDataDb();
     const user_hash =
-      vtop_id && /^[0-9A-Za-z]{6,15}$/.test(vtop_id.trim()) ? await migrateLegacyPromotions(pool as any, vtop_id) : "";
+      vtop_id && /^[0-9A-Za-z]{6,15}$/.test(vtop_id.trim()) ? await migrateLegacyPromotions(db as any, vtop_id) : "";
 
     // $1 = user_hash ('' matches nothing, so has_promoted is false for anonymous callers)
     let query = `
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
     }
     query += " ORDER BY f.created_at DESC";
 
-    const { rows } = await pool.query(query, params);
+    const { rows } = await db.query(query, params);
     return Response.json({ success: true, feed: rows });
   } catch (error) {
     console.error("Failed to fetch club feed:", error);
@@ -47,12 +47,12 @@ export async function POST(req: Request) {
     }
 
     let club_id = auth.club_id;
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     if (data.club_id && String(data.club_id).trim() !== String(auth.club_id).trim()) {
       const requestedClubId = String(data.club_id).trim();
       if (auth.role !== "super-club-rep") {
-        const { rowCount } = await pool.query(
+        const { rowCount } = await db.query(
           "SELECT 1 FROM club_representatives WHERE vtop_id = $1 AND club_id = $2",
           [auth.vtop_id, requestedClubId]
         );
@@ -63,11 +63,11 @@ export async function POST(req: Request) {
       club_id = requestedClubId;
     }
 
-    const { rows } = await pool.query(
-      `INSERT INTO club_feed (club_id, event_id, content, links, image_urls, posted_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+    const { rows } = await db.query(
+      `INSERT INTO club_feed (id, club_id, event_id, content, links, image_urls, posted_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [club_id, event_id || null, content, JSON.stringify(links || []), JSON.stringify(image_urls || []), auth.vtop_id]
+      [crypto.randomUUID(), club_id, event_id || null, content, JSON.stringify(links || []), JSON.stringify(image_urls || []), auth.vtop_id]
     );
 
     return Response.json({ success: true, post: rows[0] });
@@ -88,21 +88,21 @@ export async function DELETE(req: Request) {
       return Response.json({ success: false, error: "Post ID is required" }, { status: 400 });
     }
 
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     if (auth.role === "super-club-rep") {
-      const { rowCount } = await pool.query("DELETE FROM club_feed WHERE id = $1", [post_id]);
+      const { rowCount } = await db.query("DELETE FROM club_feed WHERE id = $1", [post_id]);
       if (!rowCount || rowCount === 0) {
         return Response.json({ success: false, error: "Post not found" }, { status: 404 });
       }
     } else {
-      const postRes = await pool.query("SELECT club_id FROM club_feed WHERE id = $1", [post_id]);
+      const postRes = await db.query("SELECT club_id FROM club_feed WHERE id = $1", [post_id]);
       if (postRes.rows.length === 0) {
         return Response.json({ success: false, error: "Post not found" }, { status: 404 });
       }
       const postClubId = postRes.rows[0].club_id;
 
-      const repCheck = await pool.query(
+      const repCheck = await db.query(
         "SELECT 1 FROM club_representatives WHERE vtop_id = $1 AND club_id = $2",
         [auth.vtop_id, postClubId]
       );
@@ -110,7 +110,7 @@ export async function DELETE(req: Request) {
         return Response.json({ success: false, error: "Unauthorized to delete this post" }, { status: 403 });
       }
 
-      await pool.query("DELETE FROM club_feed WHERE id = $1", [post_id]);
+      await db.query("DELETE FROM club_feed WHERE id = $1", [post_id]);
     }
 
     return Response.json({ success: true });

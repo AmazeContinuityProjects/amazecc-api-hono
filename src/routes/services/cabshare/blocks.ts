@@ -7,7 +7,7 @@
 import { Hono } from "hono";
 import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_BLOCKS_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { getDbPool } from "../../../../src/lib/db";
+import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareBlocksRouter = new Hono();
 
@@ -30,13 +30,10 @@ cabshareBlocksRouter.post("/blocks", async (c) => {
       );
     }
 
-    const pool = getDbPool();
-    await pool.query(
-      `INSERT INTO ${CABSHARE_BLOCKS_TABLE} (blocker_id, blocked_id)
-       VALUES ($1, $2)
-       ON CONFLICT DO NOTHING`,
-      [user.user_id, Number(body.blocked_id)],
-    );
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
+    await appDb.prepare(`INSERT INTO ${CABSHARE_BLOCKS_TABLE} (blocker_id, blocked_id)
+      VALUES (?, ?) ON CONFLICT DO NOTHING`).bind(user.user_id, Number(body.blocked_id)).run();
 
     return c.json({ success: true, message: "User blocked successfully" }, 200);
   } catch (err: unknown) {
@@ -64,12 +61,10 @@ cabshareBlocksRouter.delete("/blocks", async (c) => {
       );
     }
 
-    const pool = getDbPool();
-    await pool.query(
-      `DELETE FROM ${CABSHARE_BLOCKS_TABLE}
-       WHERE blocker_id = $1 AND blocked_id = $2`,
-      [user.user_id, Number(blockedId)],
-    );
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
+    await appDb.prepare(`DELETE FROM ${CABSHARE_BLOCKS_TABLE}
+        WHERE blocker_id = ? AND blocked_id = ?`).bind(user.user_id, Number(blockedId)).run();
 
     return c.json({ success: true, message: "User unblocked successfully" }, 200);
   } catch (err: unknown) {

@@ -9,7 +9,7 @@
  */
 import { Hono } from "hono";
 import * as cheerio from "cheerio";
-import { getDbPool } from "../../lib/db";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { publicErrorMessage } from "../../lib/publicError";
 import { vitUrl } from "../../lib/upstreamUrl";
 import { checkRateLimit, rateLimitResponse, getClientIp } from "../../lib/rateLimit";
@@ -207,8 +207,8 @@ facultyRoute.post("/faculty/scrape", async (c) => {
       return c.json({ success: false, error: "schoolId is required" }, 400);
     }
 
-    const pool = getDbPool();
-    const { rows } = await pool.query(
+    const db = getAppDataDb();
+    const { rows } = await db.query(
       `SELECT url FROM faculty_directory_urls WHERE id = $1`,
       [schoolId]
     );
@@ -232,7 +232,7 @@ facultyRoute.post("/faculty/scrape", async (c) => {
           faculties = extractFaculties(subHtml);
           if (faculties.length > 0) {
             try {
-              await pool.query(
+              await db.query(
                 `UPDATE faculty_directory_urls SET url = $1 WHERE id = $2 AND url <> $1`,
                 [subpage, schoolId]
               );
@@ -256,8 +256,8 @@ facultyRoute.post("/faculty/scrape", async (c) => {
 
 facultyRoute.get("/faculty/schools", async (c) => {
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(
+    const db = getAppDataDb();
+    const { rows } = await db.query(
       `SELECT id, school_name FROM faculty_directory_urls ORDER BY school_name ASC`
     );
     return c.json({ success: true, schools: rows });

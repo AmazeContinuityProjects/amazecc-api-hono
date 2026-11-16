@@ -1,4 +1,4 @@
-import { getDbPool } from '../../lib/db';
+import { getAppDataDb } from '../../lib/sqlCompat';
 import { hasAdminPermission, requireSection } from'../../lib/auth';
 import { logAdminAction } from '../../lib/audit';
 import { publicErrorMessage } from "../../lib/publicError";
@@ -9,8 +9,8 @@ export async function GET(req: Request) {
   if (auth instanceof Response) return auth;
 
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(
+    const db = getAppDataDb();
+    const { rows } = await db.query(
       `SELECT id, title, description, url, icon, sort_order, is_active, type, content, created_at, updated_at
        FROM fresher_resources
        ORDER BY sort_order ASC, id ASC`
@@ -42,8 +42,8 @@ export async function POST(req: Request) {
     if (resourceType === 'link' && !url) {
       return Response.json({ success: false, error: 'url is required for link type resources' }, { status: 400 });
     }
-    const pool = getDbPool();
-    const { rows } = await pool.query(
+    const db = getAppDataDb();
+    const { rows } = await db.query(
       `INSERT INTO fresher_resources (title, description, url, icon, sort_order, is_active, type, content)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, title, description, url, icon, sort_order, is_active, type, content, created_at`,

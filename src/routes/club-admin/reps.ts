@@ -1,5 +1,5 @@
 import { requireClubAuth } from "../../lib/clubAuth";
-import { getDbPool } from "../../lib/db";
+import { getAppDataDb } from "../../lib/sqlCompat";
 
 /** Port of src/app/api/club-admin/reps/route.ts. */
 export async function GET(req: Request) {
@@ -8,12 +8,12 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     let club_id = searchParams.get("club_id") || auth.club_id;
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     if (String(club_id).trim() !== String(auth.club_id).trim()) {
       const requestedClubId = String(club_id).trim();
       if (auth.role !== "super-club-rep") {
-        const { rowCount } = await pool.query(
+        const { rowCount } = await db.query(
           "SELECT 1 FROM club_representatives WHERE vtop_id = $1 AND club_id = $2",
           [auth.vtop_id, requestedClubId]
         );
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       club_id = requestedClubId;
     }
 
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       "SELECT id, vtop_id, role, created_at FROM club_representatives WHERE club_id = $1",
       [club_id]
     );
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     }
 
     let club_id = auth.club_id;
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     if (data.club_id && String(data.club_id).trim() !== String(auth.club_id).trim()) {
       club_id = String(data.club_id).trim();
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       auth.role === "super-club-rep" ||
       auth.clubs?.some((c) => c.club_id === club_id && c.role === "super-club-rep");
     if (!isSuper) {
-      const repCheck = await pool.query(
+      const repCheck = await db.query(
         "SELECT role FROM club_representatives WHERE vtop_id = $1 AND club_id = $2",
         [auth.vtop_id, club_id]
       );
@@ -79,11 +79,11 @@ export async function POST(req: Request) {
     }
 
     const newRole = role === "super-club-rep" ? "super-club-rep" : "representative";
-    await pool.query(
-      `INSERT INTO club_representatives (club_id, vtop_id, role)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (club_id, vtop_id) DO UPDATE SET role = $3`,
-      [club_id, vtop_id.toUpperCase(), newRole]
+    await db.query(
+      `INSERT INTO club_representatives (id, club_id, vtop_id, role)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (club_id, vtop_id) DO UPDATE SET role = $4`,
+      [crypto.randomUUID(), club_id, vtop_id.toUpperCase(), newRole]
     );
 
     return Response.json({ success: true, message: "Representative added/updated successfully" });
@@ -108,13 +108,13 @@ export async function DELETE(req: Request) {
       return Response.json({ success: false, error: "Cannot remove yourself" }, { status: 400 });
     }
 
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     let isSuper =
       auth.role === "super-club-rep" ||
       auth.clubs?.some((c) => c.club_id === club_id && c.role === "super-club-rep");
     if (!isSuper) {
-      const repCheck = await pool.query(
+      const repCheck = await db.query(
         "SELECT role FROM club_representatives WHERE vtop_id = $1 AND club_id = $2",
         [auth.vtop_id, club_id]
       );
@@ -130,7 +130,7 @@ export async function DELETE(req: Request) {
       );
     }
 
-    await pool.query("DELETE FROM club_representatives WHERE club_id = $1 AND vtop_id = $2", [
+    await db.query("DELETE FROM club_representatives WHERE club_id = $1 AND vtop_id = $2", [
       club_id,
       vtop_id.toUpperCase(),
     ]);

@@ -1,5 +1,5 @@
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
+import { ensureQbankInD1 } from '../../lib/qbankD1';
 
 
 
@@ -46,13 +46,12 @@ export async function POST(req: Request) {
     const { paperId } = await (req.json() as any);
     if (!paperId) return Response.json({ error: 'Paper ID is required' }, { status: 400 });
 
-    const pool = getDbPool();
+    const db = await ensureQbankInD1();
 
     // Check if already processing
-    const { rows } = await pool.query(
-      `SELECT approval_status FROM papers_archive WHERE source_id = $1`,
-      [paperId]
-    );
+    const row = await db.prepare(`SELECT approval_status FROM papers_archive WHERE source_id = ?`)
+      .bind(paperId).first<{ approval_status: string }>();
+    const rows = row ? [row] : [];
 
     if (rows.length === 0) return Response.json({ error: 'Paper not found' }, { status: 404 });
     if (rows[0].approval_status === 'OCR_QUEUED' || rows[0].approval_status === 'OCR_PROCESSING') {
@@ -60,10 +59,8 @@ export async function POST(req: Request) {
     }
 
     // Update status to QUEUED for the local worker to pick up
-    await pool.query(
-      `UPDATE papers_archive SET approval_status = 'OCR_QUEUED' WHERE source_id = $1`,
-      [paperId]
-    );
+    await db.prepare(`UPDATE papers_archive SET approval_status = 'OCR_QUEUED' WHERE source_id = ?`)
+      .bind(paperId).run();
 
     return Response.json({ success: true, message: 'Paper queued for local OCR processing' });
   } catch (error: unknown) {

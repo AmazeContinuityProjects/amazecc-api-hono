@@ -1,4 +1,4 @@
-import { getDbPool } from "../../lib/db";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { migrateLegacyPromotions } from "../../lib/promoteHash";
 import { checkRateLimit, rateLimitResponse, getClientIp } from "../../lib/rateLimit";
 
@@ -17,19 +17,20 @@ export async function POST(req: Request) {
       return Response.json({ success: false, error: "Invalid vtop_id" }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const user_hash = await migrateLegacyPromotions(pool as any, vtop_id);
+    const db = getAppDataDb();
+    const user_hash = await migrateLegacyPromotions(db as any, vtop_id);
 
-    const { rowCount } = await pool.query(
+    const { rowCount } = await db.query(
       "SELECT id FROM post_promotions WHERE post_id = $1 AND user_hash = $2",
       [post_id, user_hash]
     );
 
     if (rowCount && rowCount > 0) {
-      await pool.query("DELETE FROM post_promotions WHERE post_id = $1 AND user_hash = $2", [post_id, user_hash]);
+      await db.query("DELETE FROM post_promotions WHERE post_id = $1 AND user_hash = $2", [post_id, user_hash]);
       return Response.json({ success: true, promoted: false });
     }
-    await pool.query("INSERT INTO post_promotions (post_id, user_hash) VALUES ($1, $2)", [post_id, user_hash]);
+    await db.query("INSERT INTO post_promotions (id, post_id, user_hash) VALUES ($1, $2, $3)",
+      [crypto.randomUUID(), String(post_id), user_hash]);
     return Response.json({ success: true, promoted: true });
   } catch (error) {
     console.error("Failed to promote post:", error);

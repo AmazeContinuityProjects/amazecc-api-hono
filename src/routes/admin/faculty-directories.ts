@@ -1,4 +1,4 @@
-import { getDbPool } from '../../lib/db';
+import { getAppDataDb } from '../../lib/sqlCompat';
 import { hasAdminPermission, requireSection } from'../../lib/auth';
 import { logAdminAction } from '../../lib/audit';
 import { publicErrorMessage } from "../../lib/publicError";
@@ -9,8 +9,8 @@ export async function GET(req: Request) {
   if (auth instanceof Response) return auth;
 
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(
+    const db = getAppDataDb();
+    const { rows } = await db.query(
       `SELECT id, school_name, url FROM faculty_directory_urls ORDER BY school_name ASC`
     );
     return Response.json({ success: true, directories: rows });
@@ -37,8 +37,8 @@ export async function POST(req: Request) {
       return Response.json({ success: false, error: 'id, school_name, and url are required' }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    await pool.query(
+    const db = getAppDataDb();
+    await db.query(
       `INSERT INTO faculty_directory_urls (id, school_name, url) VALUES ($1, $2, $3)`,
       [id, school_name, url]
     );
@@ -77,8 +77,8 @@ export async function PUT(req: Request) {
       return Response.json({ success: false, error: 'id, school_name, and url are required' }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rowCount } = await pool.query(
+    const db = getAppDataDb();
+    const { rowCount } = await db.query(
       `UPDATE faculty_directory_urls SET school_name = $2, url = $3 WHERE id = $1`,
       [id, school_name, url]
     );
@@ -118,8 +118,8 @@ export async function DELETE(req: Request) {
       return Response.json({ success: false, error: 'id is required' }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rowCount } = await pool.query(
+    const db = getAppDataDb();
+    const { rowCount } = await db.query(
       `DELETE FROM faculty_directory_urls WHERE id = $1`,
       [id]
     );

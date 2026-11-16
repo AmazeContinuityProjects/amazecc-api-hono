@@ -1,5 +1,5 @@
 import { requireSection } from'../../lib/auth';
-import { getDbPool } from '../../lib/db';
+import { getAppDataDb } from '../../lib/sqlCompat';
 
 export async function GET(req: Request) {
     const authResult = await requireSection('clubs')(req);
@@ -8,8 +8,8 @@ export async function GET(req: Request) {
     }
 
     try {
-        const pool = getDbPool();
-        const result = await pool.query('SELECT * FROM club_details ORDER BY club_name ASC');
+        const db = getAppDataDb();
+        const result = await db.query('SELECT * FROM club_details ORDER BY club_name ASC');
         return Response.json({ success: true, clubs: result.rows }, { status: 200 });
     } catch (error: unknown) {
         console.error('Error fetching club details in admin GET:', error);
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
             return Response.json({ success: false, error: 'club_id and club_name are required' }, { status: 400 });
         }
 
-        const pool = getDbPool();
+        const db = getAppDataDb();
         
         // Upsert
         const query = `
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
         
         const values = [club_id, club_name, mission, description, hiring_process, website, recruitment_link, instagram, whatsapp, poc, logo_url];
         
-        const result = await pool.query(query, values);
+        const result = await db.query(query, values);
 
         return Response.json({ success: true, club: result.rows[0] }, { status: 200 });
     } catch (error: unknown) {

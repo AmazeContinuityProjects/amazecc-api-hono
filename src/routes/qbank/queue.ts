@@ -1,5 +1,5 @@
 import { requireSection } from"../../lib/auth";
-import { getDbPool } from "../../lib/db";
+import { ensureQbankInD1 } from "../../lib/qbankD1";
 
 /** Port of src/app/api/qbank/admin/queue/route.ts. */
 
@@ -7,19 +7,12 @@ export async function GET(req: Request) {
   const auth = await requireSection('qbank')(req);
   if (auth instanceof Response) return auth;
   try {
-    const pool = getDbPool();
     const status = new URL(req.url).searchParams.get("status");
-
-    let queryText = `SELECT * FROM papers_archive`;
-    const params: unknown[] = [];
-    if (status && status !== "ALL") {
-      queryText += ` WHERE approval_status = $1`;
-      params.push(status);
-    }
-    queryText += ` ORDER BY created_at DESC`;
-
-    const { rows } = await pool.query(queryText, params);
-    return Response.json({ success: true, data: rows });
+    const db = await ensureQbankInD1();
+    const result = status && status !== "ALL"
+      ? await db.prepare(`SELECT * FROM papers_archive WHERE approval_status = ? ORDER BY created_at DESC`).bind(status).all()
+      : await db.prepare(`SELECT * FROM papers_archive ORDER BY created_at DESC`).all();
+    return Response.json({ success: true, data: result.results });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
@@ -59,15 +52,12 @@ export async function PATCH(req: Request) {
       return Response.json({ success: false, error: "No valid fields to update" }, { status: 400 });
     }
 
-    values.push(paperId);
-    const queryText = `UPDATE papers_archive SET ${setClauses.join(", ")} WHERE source_id = $${paramIndex} RETURNING *`;
-    const pool = getDbPool();
-    const { rows } = await pool.query(queryText, values);
-
-    if (rows.length === 0) {
-      return Response.json({ success: false, error: "Paper not found" }, { status: 404 });
-    }
-    return Response.json({ success: true, data: rows[0] });
+    const db = await ensureQbankInD1();
+    const d1Clauses = setClauses.map((clause) => clause.replace(/ = \$\d+$/, " = ?"));
+    const row = await db.prepare(`UPDATE papers_archive SET ${d1Clauses.join(", ")} WHERE source_id = ? RETURNING *`)
+      .bind(...values, paperId).first();
+    if (!row) return Response.json({ success: false, error: "Paper not found" }, { status: 404 });
+    return Response.json({ success: true, data: row });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }

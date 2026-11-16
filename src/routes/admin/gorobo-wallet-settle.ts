@@ -35,7 +35,8 @@
  *         description: Order not found
  */
 
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 
@@ -67,9 +68,9 @@ export async function POST(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows: orderRows } = await pool.query(
+    const { rows: orderRows } = await db.query(
       `SELECT id FROM gorobo_orders WHERE id = $1`,
       [id]
     );
@@ -77,11 +78,11 @@ export async function POST(req: Request, context: RouteContext) {
       return Response.json({ success: false, error: "Order not found" }, { status: 404 });
     }
 
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `UPDATE gorobo_wallet_entries
-       SET status = 'settled', settled_at = COALESCE(settled_at, now())
+       SET status = 'settled', settled_at = COALESCE(settled_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
        WHERE order_id = $1 AND party = $2 AND status = 'pending'
-       RETURNING party, kind, amount::float8, status, settled_at`,
+       RETURNING party, kind, amount, status, settled_at`,
       [id, party]
     );
 

@@ -6,10 +6,11 @@
  */
 import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { identifyCaller, ensureSocialSchema, SOCIAL_TABLE, TIMETABLE_TABLE } from "../../../../src/lib/social";
-import { getDbPool } from "../../../../src/lib/db";
+import { identifyCaller, SOCIAL_TABLE, TIMETABLE_TABLE } from "../../../../src/lib/social";
+import { readAppConfig } from "../../../../src/lib/appConfig";
 import { createHash } from "node:crypto";
 import { hash } from "../../../../src/lib/generator";
+import { ensureSocialInD1 } from "../../../../src/lib/socialD1";
 
 export const socialTimetableRouter = new Hono();
 
@@ -41,28 +42,24 @@ socialTimetableRouter.post("/timetable", async (c) => {
         { success: false, error: "missing_grant", detail: { detail: "handle is required" } }, 400);
     }
 
-    await ensureSocialSchema();
-    const pool = getDbPool();
+    const db = await ensureSocialInD1();
 
     // Find grant by secret
     const secretHash = hash(`social-grant-secret:${body.secret}`);
     // Accept old SHA-256 grant hashes once, then upgrade them in-place. New
     // hashes always use the shared keyed generator.
     const legacySecretHash = createHash("sha256").update(body.secret).digest("hex");
-    const { rows: grantRows } = await pool.query(
-      `SELECT * FROM ${SOCIAL_TABLE} WHERE secret_hash = ANY($1::text[]) AND revoked_at IS NULL`,
-      [[secretHash, legacySecretHash]],
-    );
+    const grantRows = (await db.prepare(`SELECT * FROM ${SOCIAL_TABLE}
+          WHERE secret_hash IN (?, ?) AND revoked_at IS NULL`)
+      .bind(secretHash, legacySecretHash).all<any>()).results;
     if (!grantRows.length) {
       return c.json(
         { success: false, error: "grant_invalid", detail: { detail: "Grant secret not found or revoked" } }, 403);
     }
     const grant = grantRows[0] as any;
     if (grant.secret_hash === legacySecretHash) {
-      await pool.query(
-        `UPDATE ${SOCIAL_TABLE} SET secret_hash = $1 WHERE grant_id = $2`,
-        [secretHash, grant.grant_id],
-      );
+      await db.prepare(`UPDATE ${SOCIAL_TABLE} SET secret_hash = ? WHERE grant_id = ?`)
+        .bind(secretHash, grant.grant_id).run();
     }
 
     const callerKey = result.caller.ownerKey;
@@ -74,10 +71,12 @@ socialTimetableRouter.post("/timetable", async (c) => {
     }
 
     // Resolve peer handle to owner_key
-    const { rows: peerRows } = await pool.query(
-      "SELECT owner_key, display_name FROM social_people WHERE handle = $1",
-      [body.handle.trim().toUpperCase()],
-    );
+    const peerRows = (await db.prepare(`SELECT p.owner_key, p.display_name FROM social_people p
+          WHERE p.handle = ? OR EXISTS (
+            SELECT 1 FROM social_handle_aliases a
+             WHERE a.handle = ? AND a.register_no = UPPER(TRIM(p.register_no))) LIMIT 1`)
+      .bind(body.handle.trim().toUpperCase(), body.handle.trim().toUpperCase())
+      .all<{ owner_key: string; display_name: string | null }>()).results;
     if (!peerRows.length) {
       return c.json(
         { success: false, error: "handle_not_found", detail: { detail: "Handle not found" } }, 404);
@@ -94,26 +93,26 @@ socialTimetableRouter.post("/timetable", async (c) => {
     let semesterId = body.semester || "";
     let semesterLabel = body.semesterLabel || "";
     if (!semesterId) {
-      const { rows: cached } = await pool.query(
-        "SELECT value FROM app_config WHERE key = 'social_current_semester'",
+      const cached = await readAppConfig<{ semesterId?: string; label?: string }>(
+        "social_current_semester",
       );
-      if (cached.length && (cached[0] as any).value?.semesterId) {
-        semesterId = (cached[0] as any).value.semesterId;
-        semesterLabel = (cached[0] as any).value.label || "";
+      if (cached?.semesterId) {
+        semesterId = cached.semesterId;
+        semesterLabel = cached.label || "";
       }
     }
 
     // Fetch peer timetable
-    const { rows: ttRows } = await pool.query(
-      `SELECT * FROM ${TIMETABLE_TABLE} WHERE owner_key = $1 AND semester_id = $2`,
-      [peerKey, semesterId],
-    );
+    const ttRows = (await db.prepare(`SELECT * FROM ${TIMETABLE_TABLE} WHERE owner_key = ? AND semester_id = ?`)
+      .bind(peerKey, semesterId).all<any>()).results;
     if (!ttRows.length) {
       return c.json(
         { success: false, error: "no_timetable_for_semester", detail: { detail: "No timetable for this peer/semester" } }, 404);
     }
 
     const stored = ttRows[0] as any;
+    if (typeof stored.busy_map === "string") stored.busy_map = JSON.parse(stored.busy_map || "{}");
+    if (typeof stored.courses === "string") stored.courses = JSON.parse(stored.courses || "[]");
     const visibility = grant.visibility;
     const now = Date.now();
     const STALE_AFTER_DAYS = 14;

@@ -1,17 +1,13 @@
 import { verifyAmazeSession, adminUnauthorized } from "../../lib/amazeId";
-import { getDbPool } from "../../lib/db";
+import { decodeQbankQuestions, ensureQbankInD1, nextQbankId } from "../../lib/qbankD1";
 
 /** Public courses that have at least one approved paper. */
 export async function courses() {
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(
-      `SELECT DISTINCT course_code AS code, title
-         FROM papers_archive
-        WHERE approval_status = 'APPROVED'
-        ORDER BY course_code`,
-    );
-    return Response.json({ success: true, data: rows });
+    const db = await ensureQbankInD1();
+    const { results } = await db.prepare(`SELECT DISTINCT course_code AS code, title
+        FROM papers_archive WHERE approval_status = 'APPROVED' ORDER BY course_code`).all();
+    return Response.json({ success: true, data: results });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
@@ -25,14 +21,11 @@ export async function papers(req: Request) {
   }
 
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(
-      `SELECT * FROM papers_archive
-        WHERE course_code = $1 AND approval_status = 'APPROVED'
-        ORDER BY created_at DESC`,
-      [courseCode],
-    );
-    return Response.json({ success: true, data: rows });
+    const db = await ensureQbankInD1();
+    const { results } = await db.prepare(`SELECT * FROM papers_archive
+        WHERE course_code = ? AND approval_status = 'APPROVED' ORDER BY created_at DESC`)
+        .bind(courseCode).all();
+    return Response.json({ success: true, data: results });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
@@ -46,16 +39,12 @@ export async function questions(req: Request) {
   }
 
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(
-      `SELECT q.*, p.source_type, p.exam_semester, p.exam_year
-         FROM qbank_questions q
-         JOIN papers_archive p ON q.source_id = p.source_id
-        WHERE p.course_code = $1 AND p.approval_status = 'APPROVED'
-        ORDER BY q.question_number`,
-      [courseCode],
-    );
-    return Response.json({ success: true, data: rows });
+    const db = await ensureQbankInD1();
+    const { results } = await db.prepare(`SELECT q.*, p.source_type, p.exam_semester, p.exam_year
+        FROM qbank_questions q JOIN papers_archive p ON q.source_id = p.source_id
+        WHERE p.course_code = ? AND p.approval_status = 'APPROVED' ORDER BY q.question_number`)
+        .bind(courseCode).all();
+    return Response.json({ success: true, data: decodeQbankQuestions(results as Array<Record<string, unknown>>) });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
@@ -120,15 +109,13 @@ export async function upload(req: Request) {
   const uploaderRegNo = identity.vtopRegNo ?? asText(body.uploaderRegNo, 32) ?? "anonymous";
 
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(
-      `INSERT INTO papers_archive
-         (course_code, title, source_type, exam_year, exam_semester, file_url, uploader_reg_no, approval_status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING')
-       RETURNING source_id`,
-      [courseCode, title, sourceType, examYear, examSemester, normalizedFileUrl, uploaderRegNo],
-    );
-    return Response.json({ success: true, sourceId: rows[0]?.source_id });
+    const db = await ensureQbankInD1();
+    const sourceId = await nextQbankId();
+    await db.prepare(`INSERT INTO papers_archive
+        (source_id, course_code, title, source_type, exam_year, exam_semester, file_url, uploader_reg_no, approval_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`)
+        .bind(sourceId, courseCode, title, sourceType, examYear, examSemester, normalizedFileUrl, uploaderRegNo).run();
+    return Response.json({ success: true, sourceId });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }

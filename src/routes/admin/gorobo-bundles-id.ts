@@ -1,4 +1,5 @@
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema, type GoroboBundle } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { logAdminAction } from "../../lib/audit";
@@ -23,9 +24,9 @@ export async function PUT(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows: existing } = await pool.query<GoroboBundle>(
+    const { rows: existing } = await db.query<GoroboBundle>(
       `SELECT id FROM gorobo_bundles WHERE id = $1`,
       [id]
     );
@@ -42,17 +43,17 @@ export async function PUT(req: Request, context: RouteContext) {
     const image = typeof (body as Record<string, unknown>)?.image === "string" ? ((body as Record<string, unknown>).image as string).trim() : null;
     const isActive = (body as Record<string, unknown>)?.isActive !== undefined ? Boolean((body as Record<string, unknown>).isActive) : null;
 
-    const { rows } = await pool.query<GoroboBundle>(
+    const { rows } = await db.query<GoroboBundle>(
       `UPDATE gorobo_bundles
        SET name = COALESCE($1, name),
            description = COALESCE($2, description),
            category = COALESCE($3, category),
-           items = COALESCE($4::jsonb, items),
+           items = COALESCE($4, items),
            bundle_price = COALESCE($5, bundle_price),
            discount_pct = COALESCE($6, discount_pct),
            image = COALESCE($7, image),
            is_active = COALESCE($8, is_active),
-           updated_at = now()
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE id = $9
        RETURNING id, name, description, category, items, bundle_price, discount_pct, image, is_active, created_at, updated_at`,
       [
@@ -106,9 +107,9 @@ export async function DELETE(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rowCount } = await pool.query(
+    const { rowCount } = await db.query(
       `DELETE FROM gorobo_bundles WHERE id = $1`,
       [id]
     );

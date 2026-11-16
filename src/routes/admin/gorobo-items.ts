@@ -1,4 +1,5 @@
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema, type GoroboItem } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { mapItemRow, computePrice } from "../../lib/gorobo/items";
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
     const limitParam = searchParams.get("limit");
     const limit = limitParam ? Math.min(1000, Math.max(1, parseInt(limitParam, 10))) : 220;
 
-    const pool = getDbPool();
+    const db = getAppDataDb();
     let query = `SELECT id, name, description, price, base_price, margin, category, in_stock, image,
                         sku, stock_quantity, low_stock_threshold, location_bin, datasheet_url, tags, updated_at,
                         COUNT(*) OVER() AS total_catalog_count
@@ -28,7 +29,7 @@ export async function GET(req: Request) {
 
     if (search) {
       params.push(`%${search}%`);
-      conditions.push(`(id ILIKE $${params.length} OR name ILIKE $${params.length} OR description ILIKE $${params.length} OR sku ILIKE $${params.length} OR location_bin ILIKE $${params.length})`);
+      conditions.push(`(id LIKE $${params.length} OR name LIKE $${params.length} OR description LIKE $${params.length} OR sku LIKE $${params.length} OR location_bin LIKE $${params.length})`);
     }
     if (category) {
       params.push(category);
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
       query += ` LIMIT $${params.length}`;
     }
 
-    const { rows } = await pool.query<GoroboItem & { total_catalog_count?: string | number }>(query, params);
+    const { rows } = await db.query<GoroboItem & { total_catalog_count?: string | number }>(query, params);
     const totalCount = rows.length > 0 ? Number(rows[0].total_catalog_count ?? rows.length) : 0;
     const items = rows.map(mapItemRow);
 
@@ -114,14 +115,15 @@ export async function POST(req: Request) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows: maxRow } = await pool.query<{ next: number }>(
-      `SELECT COALESCE(MAX(id::int), 0) + 1 AS next FROM gorobo_items WHERE id ~ '^[0-9]+$'`
+    const { rows: maxRow } = await db.query<{ next: number }>(
+      `SELECT COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS next FROM gorobo_items
+         WHERE id <> '' AND id NOT GLOB '*[^0-9]*'`,
     );
     const id = String(maxRow[0].next);
 
-    const { rows } = await pool.query<GoroboItem>(
+    const { rows } = await db.query<GoroboItem>(
       `INSERT INTO gorobo_items (
         id, name, description, price, base_price, margin, category, in_stock, image,
         sku, stock_quantity, low_stock_threshold, location_bin, datasheet_url, tags

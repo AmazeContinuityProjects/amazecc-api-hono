@@ -1,5 +1,5 @@
 import { requireSection } from"../../lib/auth";
-import { getDbPool } from "../../lib/db";
+import { ensureQbankInD1 } from "../../lib/qbankD1";
 
 /** Port of src/app/api/qbank/admin/publish/route.ts. */
 export async function POST(req: Request) {
@@ -8,8 +8,8 @@ export async function POST(req: Request) {
   try {
     const { paperId } = (await req.json()) as any;
     if (!paperId) return Response.json({ success: false, error: "paperId required" }, { status: 400 });
-    const pool = getDbPool();
-    await pool.query(`UPDATE papers_archive SET approval_status = 'APPROVED' WHERE source_id = $1`, [paperId]);
+    const db = await ensureQbankInD1();
+    await db.prepare(`UPDATE papers_archive SET approval_status = 'APPROVED' WHERE source_id = ?`).bind(paperId).run();
     return Response.json({ success: true });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });

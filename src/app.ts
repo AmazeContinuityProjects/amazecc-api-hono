@@ -1,5 +1,5 @@
 /**
- * AmazeCC API - Cloudflare Workers + Queues.
+ * AmazeCC API - Cloudflare Workers.
  *
  *   /api/remote/*    VTOP (and LMS/Vitol/directory) scrapers
  *   /api/*           legacy aliases of /api/remote/* (same handlers; cutover paths)
@@ -46,13 +46,7 @@ function corsHeaders(): Record<string, string> {
   };
 }
 
-app.get("/", (c) =>
-  c.json({
-    name: "amazecc-api",
-    status: "ok",
-    docs: "/api/remote, /api/services, /api/admin",
-  })
-);
+app.get("/", (c) => c.redirect("https://docs.amazecc.com/amazecc-api", 302));
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.get("/api/status", (c) => c.json({ text: "API is working" }));
 

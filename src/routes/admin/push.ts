@@ -5,7 +5,7 @@
  * that answer 404/410 are pruned.
  */
 import { Hono } from "hono";
-import { getDbPool } from "../../lib/db";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { requireSection } from"../../lib/auth";
 import { sendWebPush, PushError } from "../../lib/webpush";
 import { hasAdminPermission } from "../../lib/auth";
@@ -27,8 +27,8 @@ pushRoute.post("/push", async (c) => {
       return Response.json({ error: "Missing title or body" }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rows } = await pool.query(`SELECT endpoint, p256dh, auth FROM push_subscriptions`);
+    const db = getAppDataDb();
+    const { rows } = await db.query(`SELECT endpoint, p256dh, auth FROM push_subscriptions`);
 
     if (rows.length === 0) {
       return Response.json({ success: true, message: "No subscribers found." });
@@ -51,7 +51,7 @@ pushRoute.post("/push", async (c) => {
           await sendWebPush(sub, payload);
         } catch (err) {
           if (err instanceof PushError && (err.statusCode === 410 || err.statusCode === 404)) {
-            await pool
+            await db
               .query(`DELETE FROM push_subscriptions WHERE endpoint = $1`, [sub.endpoint])
               .catch((cleanupErr) => console.error("Failed to prune dead subscription:", cleanupErr));
           }

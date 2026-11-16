@@ -8,7 +8,7 @@
 import { Hono } from "hono";
 import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_MATCH_EVENTS_TABLE, CABSHARE_RATINGS_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { getDbPool } from "../../../../src/lib/db";
+import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareRatingsRouter = new Hono();
 
@@ -41,16 +41,14 @@ cabshareRatingsRouter.post("/ratings", async (c) => {
       );
     }
 
-    const pool = getDbPool();
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
 
     // Verify the rater and ratee shared this trip (accepted match)
-    const { rows: matchRows } = await pool.query(
-      `SELECT 1 FROM ${CABSHARE_MATCH_EVENTS_TABLE}
-       WHERE trip_id = $1 AND status IN ('accepted', 'accept')
-         AND ((requester_id = $2 AND owner_id = $3) OR (requester_id = $3 AND owner_id = $2))
-       LIMIT 1`,
-      [body.trip_id, raterId, Number(body.ratee_id)],
-    );
+    const matchRows = (await appDb.prepare(`SELECT 1 FROM ${CABSHARE_MATCH_EVENTS_TABLE}
+          WHERE trip_id = ? AND status IN ('accepted', 'accept')
+            AND ((requester_id = ? AND owner_id = ?) OR (requester_id = ? AND owner_id = ?)) LIMIT 1`)
+          .bind(body.trip_id, raterId, Number(body.ratee_id), Number(body.ratee_id), raterId).all()).results;
     if (!matchRows.length) {
       return c.json(
         { success: false, error: "You can only rate people you shared this trip with" },
@@ -58,12 +56,9 @@ cabshareRatingsRouter.post("/ratings", async (c) => {
       );
     }
 
-    await pool.query(
-      `INSERT INTO ${CABSHARE_RATINGS_TABLE} (trip_id, rater_id, ratee_id, score, comment)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT DO NOTHING`,
-      [body.trip_id, raterId, Number(body.ratee_id), body.score, body.comment ?? null],
-    );
+    await appDb.prepare(`INSERT INTO ${CABSHARE_RATINGS_TABLE} (trip_id, rater_id, ratee_id, score, comment)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
+      .bind(body.trip_id, raterId, Number(body.ratee_id), body.score, body.comment ?? null).run();
 
     return c.json({ success: true, message: "Rating submitted" }, 200);
   } catch (err: unknown) {

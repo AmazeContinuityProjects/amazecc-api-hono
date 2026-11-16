@@ -1,5 +1,5 @@
 import { requireClubAuth } from "../../lib/clubAuth";
-import { getDbPool } from "../../lib/db";
+import { getAppDataDb } from "../../lib/sqlCompat";
 
 /** Port of src/app/api/club-admin/landing-page/route.ts. */
 export async function GET(req: Request) {
@@ -11,8 +11,8 @@ export async function GET(req: Request) {
       return Response.json({ success: false, error: "club_id is required" }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rows } = await pool.query("SELECT * FROM club_landing_pages WHERE club_id = $1", [club_id]);
+    const db = getAppDataDb();
+    const { rows } = await db.query("SELECT * FROM club_landing_pages WHERE club_id = $1", [club_id]);
 
     return Response.json({ success: true, landingPage: rows[0] || null });
   } catch (error) {
@@ -27,12 +27,12 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as any;
     let club_id = auth.club_id;
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
     if (body.club_id && String(body.club_id).trim() !== String(auth.club_id).trim()) {
       const requestedClubId = String(body.club_id).trim();
       if (auth.role !== "super-club-rep") {
-        const { rowCount } = await pool.query(
+        const { rowCount } = await db.query(
           "SELECT 1 FROM club_representatives WHERE vtop_id = $1 AND club_id = $2",
           [auth.vtop_id, requestedClubId]
         );
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
 
     const { theme, showcase_projects, popular_events } = body;
 
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `INSERT INTO club_landing_pages (club_id, theme, showcase_projects, popular_events, updated_at)
        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
        ON CONFLICT (club_id) DO UPDATE SET

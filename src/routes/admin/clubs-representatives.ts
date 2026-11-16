@@ -1,4 +1,4 @@
-import { getDbPool } from '../../lib/db';
+import { getAppDataDb } from '../../lib/sqlCompat';
 import { requireSection } from'../../lib/auth';
 
 
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const club_id = searchParams.get('club_id');
 
-    const pool = getDbPool();
+    const db = getAppDataDb();
     let query = 'SELECT * FROM club_representatives';
     const params: unknown[] = [];
 
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
     
     query += ' ORDER BY created_at DESC';
 
-    const { rows } = await pool.query(query, params);
+    const { rows } = await db.query(query, params);
 
     return Response.json({ success: true, representatives: rows });
   } catch (error) {
@@ -42,15 +42,15 @@ export async function POST(req: Request) {
       return Response.json({ success: false, error: 'club_id and vtop_id are required' }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    const { rows } = await pool.query(
-      `INSERT INTO club_representatives (club_id, vtop_id, role, assigned_by)
-       VALUES ($1, $2, $3, $4)
+    const db = getAppDataDb();
+    const { rows } = await db.query(
+      `INSERT INTO club_representatives (id, club_id, vtop_id, role, assigned_by)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (club_id, vtop_id) DO UPDATE SET
          role = EXCLUDED.role,
          assigned_by = EXCLUDED.assigned_by
        RETURNING *`,
-      [club_id, vtop_id.toUpperCase(), role || 'representative', auth.username]
+      [crypto.randomUUID(), club_id, vtop_id.toUpperCase(), role || 'representative', auth.username]
     );
 
     return Response.json({ success: true, representative: rows[0] });
@@ -72,8 +72,8 @@ export async function DELETE(req: Request) {
       return Response.json({ success: false, error: 'club_id and vtop_id are required' }, { status: 400 });
     }
 
-    const pool = getDbPool();
-    await pool.query(
+    const db = getAppDataDb();
+    await db.query(
       'DELETE FROM club_representatives WHERE club_id = $1 AND vtop_id = $2',
       [club_id, vtop_id.toUpperCase()]
     );

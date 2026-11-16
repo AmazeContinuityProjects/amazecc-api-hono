@@ -20,14 +20,16 @@ import {
 } from "../../lib/vtop";
 import fetchTimetable from "../../lib/fetchTimeTable";
 import { attendanceItem, courseItem } from "../../types/data/attendance";
-import { getDbPool } from "../../lib/db";
 import { upsertStudentProfile } from "../../lib/student-profiles";
 import { getMarks } from "../../lib/marks.htmlparser2";
+import { generateHandle } from "../../lib/social";
+import { ensureFfcsSemesterInD1, upsertD1RegisteredClasses } from "../../lib/socialD1";
 import type { CourseItem } from "../../types/data/marks";
 import {
   ensureSchema,
   ownerKeyFor,
-  recordContribution,
+  recordObservedContributionD1,
+  setStudentRegisterNumberD1,
   type Contribution,
 } from "../../lib/marksStats";
 
@@ -230,24 +232,10 @@ async function ingestAttendanceMarks(
     const regNo = authorizedID.trim().toUpperCase();
     const ownerKey = await ownerKeyFor(regNo);
     await ensureSchema();
-
-    const client = await getDbPool().connect();
-    try {
-      await client.query("BEGIN");
-      const now = Date.now();
-      for (const contribution of contributions) {
-        await recordContribution(client, ownerKey, contribution, now);
-      }
-      await client.query("COMMIT");
-    } catch (err) {
-      try {
-        await client.query("ROLLBACK");
-      } catch (rollbackErr) {
-        console.error("[attendance] marks transaction rollback failed:", rollbackErr);
-      }
-      throw err;
-    } finally {
-      await client.release();
+    const now = Date.now();
+    await setStudentRegisterNumberD1(ownerKey, regNo);
+    for (const contribution of contributions) {
+      await recordObservedContributionD1(ownerKey, regNo, contribution, now);
     }
   } catch (err) {
     console.error(
@@ -306,117 +294,35 @@ attendanceRoute.post("/attendance", async (c) => {
       marksRes = err instanceof Error ? err.message : String(err);
     }
 
-    // ── FFCS enrollment (social only) ──
-    // Record each course in ffcs_classes + ffcs_class_registrations keyed by
-    // reg_no. Create a partial student_profiles row if one doesn't exist yet.
+    // Enroll the authenticated VTOP register number directly into APP_DB FFCS data.
     try {
       const regNo = String(authorizedID).trim().toUpperCase();
       const ownerKey = await ownerKeyFor(regNo);
-      const semester = String(semesterId ?? "");
+      const semester = String(semesterId ?? "").trim().toUpperCase();
+      if (!semester) throw new Error("semesterId is required for FFCS enrollment");
 
-      // Ensure a partial Amaze ID account exists for this reg number.
-      await upsertStudentProfile(regNo, {
-        semester_id: semester || undefined,
+      await upsertStudentProfile(regNo, { semester_id: semester });
+      await ensureFfcsSemesterInD1(semester);
+      await upsertD1RegisteredClasses({
+        semesterId: semester,
+        ownerKey,
+        registerNo: regNo,
+        displayName: "",
+        handle: generateHandle(regNo),
+        courses: courseInfo.filter((course) => course.classId).map((course) => ({
+          classId: course.classId,
+          courseCode: course.courseCode.trim(),
+          courseTitle: course.course,
+          courseType: course.category || "",
+          slot: course.slotVenue || "",
+          faculty: course.facultyDetails || "",
+          credits: course.LTPJC?.split(" ")[4] || "",
+          room: course.slotVenue || "",
+        })),
       });
-
-      const pool = getDbPool();
-
-      // Ensure the social FFCS tables exist (inline DDL, house style).
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS ffcs_classes (
-          semester_id   TEXT NOT NULL,
-          class_id      TEXT NOT NULL,
-          course_code   TEXT NOT NULL DEFAULT '',
-          course_title  TEXT NOT NULL DEFAULT '',
-          course_type   TEXT NOT NULL DEFAULT '',
-          slot          TEXT NOT NULL DEFAULT '',
-          faculty       TEXT NOT NULL DEFAULT '',
-          credits       TEXT NOT NULL DEFAULT '',
-          room          TEXT NOT NULL DEFAULT '',
-          register_nos  TEXT[] NOT NULL DEFAULT '{}',
-          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          PRIMARY KEY (semester_id, class_id)
-        );
-        CREATE INDEX IF NOT EXISTS ffcs_classes_sem_class_idx
-          ON ffcs_classes (semester_id, class_id);
-
-        CREATE TABLE IF NOT EXISTS ffcs_class_registrations (
-          semester_id   TEXT NOT NULL,
-          class_id      TEXT NOT NULL,
-          register_no   TEXT NOT NULL,
-          display_name  TEXT NOT NULL DEFAULT '',
-          handle        TEXT NOT NULL DEFAULT '',
-          owner_key     TEXT NOT NULL,
-          discoverable  BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          PRIMARY KEY (semester_id, class_id, register_no)
-        );
-        CREATE INDEX IF NOT EXISTS ffcs_class_registrations_sem_reg_idx
-          ON ffcs_class_registrations (semester_id, register_no);
-        CREATE INDEX IF NOT EXISTS ffcs_class_registrations_sem_class_idx
-          ON ffcs_class_registrations (semester_id, class_id);
-      `);
-
-      for (const course of courseInfo) {
-        const classId = course.classId;
-        if (!classId) continue;
-
-        // Upsert into ffcs_classes (class catalog)
-        await pool.query(
-          `INSERT INTO ffcs_classes
-            (semester_id, class_id, course_code, course_title, course_type, slot, faculty, credits, room)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (semester_id, class_id)
-           DO UPDATE SET
-             course_code = EXCLUDED.course_code,
-             course_title = EXCLUDED.course_title,
-             course_type = EXCLUDED.course_type,
-             slot = EXCLUDED.slot,
-             faculty = EXCLUDED.faculty,
-             credits = EXCLUDED.credits,
-             room = EXCLUDED.room,
-             updated_at = NOW()`,
-          [
-            semester,
-            classId,
-            course.courseCode.trim(),
-            course.course,
-            course.category || "",
-            course.slotVenue || "",
-            course.facultyDetails || "",
-            course.LTPJC?.split(" ")[4] || "",
-            course.slotVenue || "",
-          ]
-        );
-
-        // Register the student in ffcs_class_registrations
-        await pool.query(
-          `INSERT INTO ffcs_class_registrations
-            (semester_id, class_id, register_no, display_name, handle, owner_key, discoverable, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-           ON CONFLICT (semester_id, class_id, register_no)
-           DO UPDATE SET
-             display_name = EXCLUDED.display_name,
-             handle = EXCLUDED.handle,
-             owner_key = EXCLUDED.owner_key,
-             discoverable = EXCLUDED.discoverable,
-             updated_at = NOW()`,
-          [
-            semester,
-            classId,
-            regNo,
-            "", // display_name - filled when student claims Amaze ID
-            "", // handle - filled when student claims Amaze ID
-            ownerKey, // canonical HMAC of the normalized register number
-            true, // discoverable
-          ]
-        );
-      }
     } catch (err) {
-      console.error("[attendance] ffc enrollment failed:", err);
-      // Don't break the attendance response on enrollment failure.
+      console.error("[attendance] FFCS enrollment failed:", err);
+      // Keep the attendance response available if the optional enrollment write fails.
     }
 
     const $$$ = cheerio.load(ttHtml);

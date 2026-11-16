@@ -1,5 +1,5 @@
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
+import { ensureTransportInD1 } from '../../lib/transportD1';
 
 
 export async function GET(req: Request) {
@@ -10,31 +10,20 @@ export async function GET(req: Request) {
   }
 
   try {
-    const pool = getDbPool();
-    const { rows } = await pool.query(`
-      SELECT id, route_number, route_name, type, placements
-      FROM buses_v2
-      WHERE jsonb_array_length(placements) > 0
-      ORDER BY route_number::int
-    `);
+    const db = await ensureTransportInD1();
+    const { results } = await db.prepare(`SELECT id, route_number, route_name, type, placements
+      FROM buses_v2 WHERE json_array_length(placements) > 0 ORDER BY CAST(route_number AS INTEGER)`).all<Record<string, unknown>>();
     const flat: Array<Record<string, unknown>> = [];
-    for (const r of rows) {
-      for (const p of (r as Record<string, unknown>).placements as Array<Record<string, unknown>> || []) {
-        flat.push({
-          routeId: (r as Record<string, unknown>).id,
-          routeNumber: (r as Record<string, unknown>).route_number,
-          routeName: (r as Record<string, unknown>).route_name,
-          dispersalTime: p.dispersalTime,
-          zone: p.zone,
-        });
-      }
+    for (const route of results) {
+      let placements: Array<Record<string, unknown>> = [];
+      try { placements = typeof route.placements === 'string' ? JSON.parse(route.placements) : route.placements as Array<Record<string, unknown>>; } catch { /* malformed legacy value */ }
+      for (const placement of placements || []) flat.push({
+        routeId: route.id, routeNumber: route.route_number, routeName: route.route_name,
+        dispersalTime: placement.dispersalTime, zone: placement.zone,
+      });
     }
-    flat.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
-      const aTime = a.dispersalTime as string;
-      const bTime = b.dispersalTime as string;
-      if (aTime !== bTime) return aTime < bTime ? -1 : 1;
-      return parseInt(a.routeNumber as string) - parseInt(b.routeNumber as string);
-    });
+    flat.sort((a, b) => String(a.dispersalTime).localeCompare(String(b.dispersalTime))
+      || Number(a.routeNumber) - Number(b.routeNumber));
     return Response.json({ success: true, placements: flat });
   } catch (error: unknown) {
     console.error('Failed to fetch placements:', error);
@@ -50,37 +39,25 @@ export async function POST(req: Request) {
   }
 
   try {
-    const pool = getDbPool();
     const placements: { routeNumber: string; dispersalTime: string; zone: string }[] = await (req.json() as any);
 
     if (!Array.isArray(placements)) {
       return Response.json({ success: false, error: 'Expected an array of placements' }, { status: 400 });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query("UPDATE buses_v2 SET placements = '[]'::jsonb");
-
-      const byRoute: Record<string, unknown[]> = {};
-      for (const p of placements) {
-        if (!byRoute[p.routeNumber]) byRoute[p.routeNumber] = [];
-        byRoute[p.routeNumber].push({ dispersalTime: p.dispersalTime, zone: p.zone });
-      }
-
-      for (const [routeNumber, routePlacements] of Object.entries(byRoute)) {
-        await client.query(
-          'UPDATE buses_v2 SET placements = $1::jsonb, updated_at = now() WHERE route_number = $2',
-          [JSON.stringify(routePlacements), routeNumber]
-        );
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    const db = await ensureTransportInD1();
+    const byRoute: Record<string, unknown[]> = {};
+    for (const placement of placements) {
+      if (!byRoute[placement.routeNumber]) byRoute[placement.routeNumber] = [];
+      byRoute[placement.routeNumber].push({ dispersalTime: placement.dispersalTime, zone: placement.zone });
     }
+    const statements: D1PreparedStatement[] = [db.prepare(`UPDATE buses_v2 SET placements = '[]', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`)];
+    for (const [routeNumber, routePlacements] of Object.entries(byRoute)) {
+      statements.push(db.prepare(`UPDATE buses_v2 SET placements = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE route_number = ?`)
+        .bind(JSON.stringify(routePlacements), routeNumber));
+    }
+    if (statements.length > 999) return Response.json({ success: false, error: 'Too many routes in one update' }, { status: 400 });
+    await db.batch(statements);
 
     return Response.json({ success: true, message: 'Placements updated successfully' });
   } catch (error: unknown) {

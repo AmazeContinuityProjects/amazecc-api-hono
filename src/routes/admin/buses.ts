@@ -36,9 +36,8 @@
  *         description: Internal Server Error
  */
 
-import { getWorkerEnv } from '../../env';
-import { getDbPool } from '../../lib/db';
 import { requireSection } from'../../lib/auth';
+import { ensureTransportInD1 } from '../../lib/transportD1';
 
 /**
  * @swagger
@@ -84,7 +83,7 @@ import { requireSection } from'../../lib/auth';
  *       401:
  *         description: Unauthorized
  *       500:
- *         description: Internal server error or DATABASE_URL not configured
+ *         description: Internal server error or APP_DB not configured
  */
 
 export async function POST(req: Request) {
@@ -94,61 +93,25 @@ export async function POST(req: Request) {
   }
 
   try {
-    if (!getWorkerEnv().DATABASE_URL && !getWorkerEnv().HYPERDRIVE) {
-      return Response.json({ success: false, message: 'DATABASE_URL is not configured.' }, { status: 500 });
-    }
-
     const buses = await (req.json() as any);
 
     if (!Array.isArray(buses)) {
       return Response.json({ success: false, message: 'Expected an array of buses.' }, { status: 400 });
     }
-
-    const pool = getDbPool();
-
-    // Create table if it doesn't exist
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS buses (
-        id VARCHAR(255) PRIMARY KEY,
-        type VARCHAR(50),
-        route VARCHAR(255),
-        boarding_points JSONB,
-        driver_phone VARCHAR(50),
-        driver_name VARCHAR(100),
-        whatsapp_group TEXT,
-        bus_location TEXT
-      );
-    `);
-
-    // We'll use a transaction to replace the buses
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('TRUNCATE TABLE buses');
-
-      for (const bus of buses) {
-        await client.query(
-          `INSERT INTO buses (id, type, route, boarding_points, driver_phone, driver_name, whatsapp_group, bus_location)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            bus.id,
-            bus.type,
-            bus.route,
-            JSON.stringify(bus.boardingPoints || []),
-            bus.driverPhone,
-            bus.driverName,
-            bus.whatsappGroup,
-            bus.busLocation
-          ]
-        );
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    if (buses.length > 999) {
+      return Response.json({ success: false, message: 'Too many buses in one update.' }, { status: 400 });
     }
+
+    const db = await ensureTransportInD1();
+    const statements: D1PreparedStatement[] = [db.prepare('DELETE FROM buses')];
+    for (const bus of buses) {
+      statements.push(db.prepare(`INSERT INTO buses
+        (id, type, route, boarding_points, driver_phone, driver_name, whatsapp_group, bus_location)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(String(bus.id), bus.type ?? null, bus.route ?? null, JSON.stringify(bus.boardingPoints || []),
+          bus.driverPhone ?? null, bus.driverName ?? null, bus.whatsappGroup ?? null, bus.busLocation ?? null));
+    }
+    await db.batch(statements);
 
     return Response.json({ success: true, message: 'Buses updated successfully in the database.' });
   } catch (error: unknown) {

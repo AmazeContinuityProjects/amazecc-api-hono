@@ -2,7 +2,7 @@
   "name": "amazecc-api-hono",
   "version": "0.1.0",
   "private": true,
-  "description": "AmazeCC API — VTOP remote scrapers, services atop remote, and admin routes. Cloudflare Workers + Queues.",
+  "description": "AmazeCC API — VTOP remote scrapers, services atop remote, and admin routes on Cloudflare Workers.",
   "type": "module",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
@@ -21,7 +21,6 @@
     "hono": "^4.9.16",
     "htmlparser2": "^12.0.0",
     "jpeg-js": "^0.4.4",
-    "pg": "^8.21.0",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {
@@ -30,6 +29,7 @@
     "@electric-sql/pglite-socket": "^0.2.19",
     "@types/jpeg-js": "^0.3.7",
     "@types/node": "^26.6.6",
+    "pg": "^8.21.0",
     "@types/pg": "^8.23.1",
     "@types/pngjs": "^6.0.5",
     "typescript": "^5.9.3",

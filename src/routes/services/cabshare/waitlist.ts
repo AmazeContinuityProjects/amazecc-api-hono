@@ -8,7 +8,7 @@
 import { Hono } from "hono";
 import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_WAITLIST_TABLE } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
-import { getDbPool } from "../../../../src/lib/db";
+import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareWaitlistRouter = new Hono();
 
@@ -44,13 +44,10 @@ cabshareWaitlistRouter.post("/waitlist", async (c) => {
       );
     }
 
-    const pool = getDbPool();
-    await pool.query(
-      `INSERT INTO ${CABSHARE_WAITLIST_TABLE} (user_id, hub_id, travel_date)
-       VALUES ($1, $2, $3)
-       ON CONFLICT DO NOTHING`,
-      [user.user_id, body.hub_id, body.travel_date],
-    );
+    const appDb = getWorkerEnv().APP_DB;
+    if (!appDb) throw new Error("APP_DB is not configured");
+    await appDb.prepare(`INSERT INTO ${CABSHARE_WAITLIST_TABLE} (user_id, hub_id, travel_date)
+      VALUES (?, ?, ?) ON CONFLICT DO NOTHING`).bind(user.user_id, body.hub_id, body.travel_date).run();
 
     return c.json({ success: true, message: "Added to waitlist" }, 200);
   } catch (err: unknown) {

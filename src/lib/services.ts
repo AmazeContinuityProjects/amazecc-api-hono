@@ -14,7 +14,7 @@
  * exist. Enrolling in "all" means every id in the registry, so future services
  * are covered by the same call without a new endpoint.
  */
-import { getDbPool } from "./db";
+import { getWorkerEnv } from "../env";
 import { vtopPostMenu, readText, type VtopCreds } from "./vtop";
 import { parseStudentProfile } from "./parsers/student-profile";
 import { ownerKeyFor } from "./marksStats";
@@ -51,29 +51,14 @@ export interface ResolvedCaller {
 
 /* ── schema ─────────────────────────────────────────────────────────────── */
 
-let schemaEnsured: Promise<void> | null = null;
+async function requireServiceEnrollmentsDb(): Promise<D1Database> {
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  return db;
+}
 
-export function ensureServiceEnrollmentSchema(): Promise<void> {
-  if (!schemaEnsured) {
-    schemaEnsured = (async () => {
-      await getDbPool().query(`
-        CREATE TABLE IF NOT EXISTS service_enrollments (
-          owner_key TEXT NOT NULL,
-          service TEXT NOT NULL,
-          enrolled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          revoked_at TIMESTAMPTZ,
-          PRIMARY KEY (owner_key, service)
-        );
-        CREATE INDEX IF NOT EXISTS idx_service_enrollments_owner
-          ON service_enrollments (owner_key);
-      `);
-    })().catch((err) => {
-      // Allow a retry on the next call if the DB was briefly unavailable.
-      schemaEnsured = null;
-      throw err;
-    });
-  }
-  return schemaEnsured;
+export async function ensureServiceEnrollmentSchema(): Promise<void> {
+  await requireServiceEnrollmentsDb();
 }
 
 /* ── caller resolution ──────────────────────────────────────────────────── */
@@ -108,59 +93,47 @@ export function pickServices(requested: unknown): string[] {
 }
 
 export async function listEnrollmentState(ownerKey: string): Promise<EnrollmentState[]> {
-  await ensureServiceEnrollmentSchema();
-  const { rows } = await getDbPool().query(
-    `SELECT service, enrolled_at, revoked_at FROM service_enrollments WHERE owner_key = $1`,
-    [ownerKey]
-  );
-  const byService = new Map<string, { enrolled_at: string | null; revoked_at: string | null }>();
-  for (const row of rows) {
-    byService.set(row.service, row);
-  }
+  const db = await requireServiceEnrollmentsDb();
+  const { results } = await db.prepare(`SELECT service, enrolled_at, revoked_at
+    FROM service_enrollments WHERE owner_key = ?`).bind(ownerKey)
+    .all<{ service: string; enrolled_at: string | null; revoked_at: string | null }>();
+  const byService = new Map(results.map((row) => [row.service, row]));
   return SERVICE_IDS.map((id) => {
     const row = byService.get(id);
     const enrolledAt = row?.enrolled_at ?? null;
     const revokedAt = row?.revoked_at ?? null;
-    return {
-      service: id,
-      enrolled: !!enrolledAt && !revokedAt,
-      enrolledAt,
-      revokedAt,
-    };
+    return { service: id, enrolled: Boolean(enrolledAt) && !revokedAt, enrolledAt, revokedAt };
   });
 }
 
 export async function enroll(ownerKey: string, serviceIds: string[]): Promise<void> {
-  if (serviceIds.length === 0) return;
-  await ensureServiceEnrollmentSchema();
-  const pool = getDbPool();
-  for (const service of serviceIds) {
-    await pool.query(
-      `INSERT INTO service_enrollments (owner_key, service, enrolled_at, revoked_at)
-       VALUES ($1, $2, now(), NULL)
-       ON CONFLICT (owner_key, service)
-         DO UPDATE SET enrolled_at = now(), revoked_at = NULL`,
-      [ownerKey, service]
-    );
+  if (!serviceIds.length) return;
+  const db = await requireServiceEnrollmentsDb();
+  const statements = serviceIds.map((service) => db.prepare(`INSERT INTO service_enrollments
+      (owner_key, service, enrolled_at, revoked_at)
+    VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL)
+    ON CONFLICT (owner_key, service) DO UPDATE SET
+      enrolled_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), revoked_at = NULL`)
+    .bind(ownerKey, service));
+  for (let index = 0; index < statements.length; index += 80) {
+    await db.batch(statements.slice(index, index + 80));
   }
 }
 
 export async function revoke(ownerKey: string, serviceIds: string[]): Promise<void> {
-  if (serviceIds.length === 0) return;
-  await ensureServiceEnrollmentSchema();
-  await getDbPool().query(
-    `UPDATE service_enrollments SET revoked_at = now()
-     WHERE owner_key = $1 AND service = ANY($2) AND revoked_at IS NULL`,
-    [ownerKey, serviceIds]
-  );
+  if (!serviceIds.length) return;
+  const db = await requireServiceEnrollmentsDb();
+  const placeholders = serviceIds.map(() => "?").join(", ");
+  await db.prepare(`UPDATE service_enrollments
+    SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE owner_key = ? AND service IN (${placeholders}) AND revoked_at IS NULL`)
+    .bind(ownerKey, ...serviceIds).run();
 }
 
 export async function isEnrolled(ownerKey: string, service: string): Promise<boolean> {
-  await ensureServiceEnrollmentSchema();
-  const { rows } = await getDbPool().query(
-    `SELECT 1 FROM service_enrollments
-     WHERE owner_key = $1 AND service = $2 AND revoked_at IS NULL`,
-    [ownerKey, service]
-  );
-  return rows.length > 0;
+  const db = await requireServiceEnrollmentsDb();
+  const row = await db.prepare(`SELECT 1 AS enrolled FROM service_enrollments
+    WHERE owner_key = ? AND service = ? AND revoked_at IS NULL`)
+    .bind(ownerKey, service).first();
+  return Boolean(row);
 }

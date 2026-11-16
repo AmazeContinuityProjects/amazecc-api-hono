@@ -1,4 +1,5 @@
-import { getDbPool, getDbErrorStatus, getDbErrorMessage } from "../../lib/db";
+import { getDbErrorStatus, getDbErrorMessage } from "../../lib/dbErrors";
+import { getAppDataDb } from "../../lib/sqlCompat";
 import { ensureGoroboSchema, GOROBO_ORDER_STATUSES } from "../../lib/gorobo/schema";
 import { requireGoroboAdmin } from "../../lib/gorobo/admin-auth";
 import { computeQuote, computeWalletAmounts } from "../../lib/gorobo/quote";
@@ -19,14 +20,14 @@ export async function GET(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
-    const { rows } = await pool.query<GoroboOrderRow>(`${ORDER_SELECT} WHERE id = $1`, [id]);
+    const db = getAppDataDb();
+    const { rows } = await db.query<GoroboOrderRow>(`${ORDER_SELECT} WHERE id = $1`, [id]);
     if (rows.length === 0) {
       return Response.json({ success: false, error: "Order not found" }, { status: 404 });
     }
 
-    const { rows: walletRows } = await pool.query(
-      `SELECT party, kind, amount::float8, status, settled_at, created_at
+    const { rows: walletRows } = await db.query(
+      `SELECT party, kind, amount, status, settled_at, created_at
        FROM gorobo_wallet_entries WHERE order_id = $1 ORDER BY kind, party`,
       [id]
     );
@@ -53,9 +54,9 @@ export async function PUT(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows: existing } = await pool.query<GoroboOrderRow>(
+    const { rows: existing } = await db.query<GoroboOrderRow>(
       `SELECT status FROM gorobo_orders WHERE id = $1`,
       [id]
     );
@@ -69,12 +70,12 @@ export async function PUT(req: Request, context: RouteContext) {
       );
     }
 
-    const parsed = await parseQuoteBody(body, pool);
+    const parsed = await parseQuoteBody(body, db);
     const quote = computeQuote(parsed);
 
-    const { rows } = await pool.query<GoroboOrderRow>(
+    const { rows } = await db.query<GoroboOrderRow>(
       `UPDATE gorobo_orders
-       SET items = $1::jsonb,
+       SET items = $1,
            subtotal = $2,
            discount_pct = $3,
            discount_amount = $4,
@@ -136,9 +137,9 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   try {
     await ensureGoroboSchema();
-    const pool = getDbPool();
+    const db = getAppDataDb();
 
-    const { rows: existing } = await pool.query<GoroboOrderRow>(
+    const { rows: existing } = await db.query<GoroboOrderRow>(
       `${ORDER_SELECT} WHERE id = $1`,
       [id]
     );
@@ -172,7 +173,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       };
       const wallet = computeWalletAmounts(quote, lines);
 
-      await pool.query(
+      await db.query(
         `INSERT INTO gorobo_wallet_entries (order_id, party, kind, amount, status)
          VALUES ($1, 'customer', 'profit', $2, 'pending'),
                 ($1, 'customer', 'gst', $3, 'pending'),
@@ -182,7 +183,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       );
     }
 
-    const { rows } = await pool.query<GoroboOrderRow>(
+    const { rows } = await db.query<GoroboOrderRow>(
       `UPDATE gorobo_orders
        SET status = $1, notes = $2, delivery_mode = $3
        WHERE id = $4

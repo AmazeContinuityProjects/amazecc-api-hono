@@ -13,13 +13,11 @@
 import { Hono } from "hono";
 import { verifyAmazeSession, adminUnauthorized } from "./amazeId";
 import { publicErrorMessage } from "./publicError";
-import { getDbPool } from "./db";
 import {
   ensureStudentProfilesSchema,
-  getStudentProfileByRegNo,
-  upsertStudentProfile,
 } from "./student-profiles";
 import { regKey } from "./social";
+import { getWorkerEnv } from "../env";
 
 export const CABSHARE_TABLE = "cabshare_users";
 export const CABSHARE_TRIPS_TABLE = "cabshare_trips";
@@ -57,158 +55,34 @@ export async function requireCabshareUser(
   return identity.vtopRegNo.trim().toUpperCase();
 }
 
-/** Ensure cabshare tables exist (inline DDL, house style). */
+/** Require the service-data D1 binding; migrations own the table schema. */
 export async function ensureCabshareSchema(): Promise<void> {
-  const pool = getDbPool();
-
-  await ensureStudentProfilesSchema();
-
-  // cabshare_users: add owner_key column if missing
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_TABLE} (
-      user_id       SERIAL PRIMARY KEY,
-      name          TEXT NOT NULL,
-      phone_number  TEXT,
-      reg_number    TEXT NOT NULL UNIQUE,
-      owner_key     TEXT UNIQUE,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  // Add owner_key if the table already existed without it
-  try {
-    await pool.query(
-      `ALTER TABLE ${CABSHARE_TABLE} ADD COLUMN IF NOT EXISTS owner_key TEXT UNIQUE`,
-    );
-  } catch {
-    // column may already exist
-  }
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_HUBS_TABLE} (
-      hub_id   SERIAL PRIMARY KEY,
-      hub_name TEXT NOT NULL,
-      city     TEXT NOT NULL
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_TRIPS_TABLE} (
-      trip_id            SERIAL PRIMARY KEY,
-      user_id            INTEGER NOT NULL REFERENCES ${CABSHARE_TABLE}(user_id),
-      hub_id             INTEGER NOT NULL REFERENCES ${CABSHARE_HUBS_TABLE}(hub_id),
-      travel_date        DATE NOT NULL,
-      preferred_time     TEXT NOT NULL,
-      tolerance_hours    INTEGER NOT NULL DEFAULT 0,
-      seat_options       JSONB NOT NULL DEFAULT '[]'::jsonb,
-      gender_preference  TEXT NOT NULL,
-      notes              TEXT,
-      status             TEXT NOT NULL DEFAULT 'active',
-      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_MATCH_EVENTS_TABLE} (
-      id          SERIAL PRIMARY KEY,
-      trip_id     INTEGER NOT NULL REFERENCES ${CABSHARE_TRIPS_TABLE}(trip_id),
-      requester_id INTEGER NOT NULL,
-      owner_id    INTEGER NOT NULL,
-      status      TEXT NOT NULL DEFAULT 'pending',
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_WAITLIST_TABLE} (
-      waitlist_id SERIAL PRIMARY KEY,
-      user_id     INTEGER NOT NULL REFERENCES ${CABSHARE_TABLE}(user_id),
-      hub_id      INTEGER NOT NULL REFERENCES ${CABSHARE_HUBS_TABLE}(hub_id),
-      travel_date DATE NOT NULL,
-      UNIQUE (user_id, hub_id, travel_date)
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_NOTIFICATIONS_TABLE} (
-      notif_id SERIAL PRIMARY KEY,
-      user_id  INTEGER NOT NULL REFERENCES ${CABSHARE_TABLE}(user_id),
-      title    TEXT NOT NULL,
-      message  TEXT NOT NULL,
-      type     TEXT NOT NULL DEFAULT 'info',
-      is_read  BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_RATINGS_TABLE} (
-      trip_id   INTEGER NOT NULL REFERENCES ${CABSHARE_TRIPS_TABLE}(trip_id),
-      rater_id  INTEGER NOT NULL REFERENCES ${CABSHARE_TABLE}(user_id),
-      ratee_id  INTEGER NOT NULL REFERENCES ${CABSHARE_TABLE}(user_id),
-      score     INTEGER NOT NULL CHECK (score >= 1 AND score <= 5),
-      comment   TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (trip_id, rater_id)
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ${CABSHARE_BLOCKS_TABLE} (
-      blocker_id  INTEGER NOT NULL REFERENCES ${CABSHARE_TABLE}(user_id),
-      blocked_id  INTEGER NOT NULL REFERENCES ${CABSHARE_TABLE}(user_id),
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (blocker_id, blocked_id)
-    );
-  `);
+  if (!getWorkerEnv().APP_DB) throw new Error("APP_DB is not configured");
 }
 
 /** Look up or create a cabshare user row for the given reg_no. */
 export async function ensureCabshareUser(
   regNo: string,
 ): Promise<CabshareUser> {
-  const pool = getDbPool();
+  await ensureCabshareSchema();
+  await ensureStudentProfilesSchema();
   const canonicalRegNo = regNo.trim().toUpperCase();
   const ownerKey = regKey(canonicalRegNo);
-  const profile = await getStudentProfileByRegNo(canonicalRegNo);
-
-  const refreshExisting = async (userId: number): Promise<CabshareUser> => {
-    const { rows } = await pool.query(
-      `UPDATE ${CABSHARE_TABLE}
-          SET owner_key = $1,
-              name = COALESCE(NULLIF($2, ''), name),
-              phone_number = COALESCE($3, phone_number)
-        WHERE user_id = $4
-        RETURNING *`,
-      [ownerKey, profile?.display_name ?? null, profile?.phone_number ?? null, userId],
-    );
-    if (!rows.length) throw new Error(`Failed to refresh cabshare user ${userId}`);
-    return rows[0] as CabshareUser;
-  };
-
-  // Try existing row by owner_key
-  let result = await pool.query(
-    `SELECT * FROM ${CABSHARE_TABLE} WHERE owner_key = $1 LIMIT 1`,
-    [ownerKey],
-  );
-  if (result.rows.length) return refreshExisting(Number(result.rows[0].user_id));
-
-  // Try existing row by reg_number (legacy migration)
-  result = await pool.query(
-    `SELECT * FROM ${CABSHARE_TABLE} WHERE UPPER(reg_number) = $1 LIMIT 1`,
-    [canonicalRegNo],
-  );
-  if (result.rows.length) return refreshExisting(Number(result.rows[0].user_id));
-
-  // Create new row — we only have reg_no; name/phone come from student_profiles
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  const profile = await db.prepare(`SELECT display_name, phone_number FROM student_profiles WHERE reg_no = ?`)
+    .bind(canonicalRegNo).first<{ display_name: string | null; phone_number: string | null }>();
   const name = profile?.display_name || canonicalRegNo;
-  const phone = profile?.phone_number || null;
-
-  const { rows: inserted } = await pool.query(
-    `INSERT INTO ${CABSHARE_TABLE} (name, phone_number, reg_number, owner_key)
-     VALUES ($1, $2, $3, $4)
-     RETURNING *`,
-    [name, phone, canonicalRegNo, ownerKey],
-  );
-  return inserted[0] as CabshareUser;
+  const result = await db.prepare(`INSERT INTO ${CABSHARE_TABLE}
+      (name, phone_number, reg_number, owner_key)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (reg_number) DO UPDATE SET
+      owner_key = excluded.owner_key,
+      name = CASE WHEN excluded.name <> '' THEN excluded.name ELSE ${CABSHARE_TABLE}.name END,
+      phone_number = COALESCE(excluded.phone_number, ${CABSHARE_TABLE}.phone_number)
+    RETURNING *`)
+    .bind(name, profile?.phone_number ?? null, canonicalRegNo, ownerKey)
+    .first<CabshareUser>();
+  if (!result) throw new Error(`Failed to ensure cabshare user ${canonicalRegNo}`);
+  return { ...result, user_id: Number(result.user_id) };
 }

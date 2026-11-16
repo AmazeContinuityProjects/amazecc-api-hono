@@ -10,18 +10,18 @@ import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import {
   identifyCaller,
-  ensureSocialSchema,
-  regKey,
   generateHandle,
+  getSocialHandlesForRegister,
   SOCIAL_TABLE,
   TIMETABLE_TABLE,
   FFCS_MATCH_TABLE,
   type CallerIdentity,
 } from "../../../../src/lib/social";
 import { upsertStudentProfile, getStudentProfileByRegNo } from "../../../../src/lib/student-profiles";
-import { getDbPool } from "../../../../src/lib/db";
+import { readAppConfig } from "../../../../src/lib/appConfig";
 import { vtopPostForm, readText, formParams } from "../../../../src/lib/vtop";
 import { parseStudentProfile } from "../../../../src/lib/parsers/student-profile";
+import { ensureSocialInD1, migrateD1SocialOwnerKey } from "../../../../src/lib/socialD1";
 
 export const socialIdentitySyncRouter = new Hono();
 
@@ -57,14 +57,22 @@ socialIdentitySyncRouter.post("/identity/sync", async (c) => {
     }
 
     const caller = result.caller;
-    await ensureSocialSchema();
+    const db = await ensureSocialInD1();
+    await migrateD1SocialOwnerKey(caller.regNo, caller.ownerKey);
+    const handles = await getSocialHandlesForRegister(caller.regNo);
+    await db.prepare(`INSERT INTO social_people (owner_key, handle, display_name, register_no)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (owner_key) DO UPDATE SET
+         handle = excluded.handle,
+         display_name = CASE WHEN excluded.display_name <> '' THEN excluded.display_name ELSE social_people.display_name END,
+         register_no = excluded.register_no,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`)
+      .bind(caller.ownerKey, generateHandle(caller.regNo), caller.displayName, caller.regNo).run();
 
     // Upsert the person profile (partial Amaze ID account, incomplete)
     await upsertStudentProfile(caller.regNo, {
       display_name: caller.displayName,
     });
-
-    const pool = getDbPool();
 
     // Parse timetable
     const timetableRes = await vtopPostForm(
@@ -90,11 +98,9 @@ socialIdentitySyncRouter.post("/identity/sync", async (c) => {
     let semesterSource = "proposed";
     if (!semesterId) {
       // try cached semester
-      const { rows: cached } = await pool.query(
-        "SELECT value FROM app_config WHERE key = 'social_current_semester'",
-      );
-      if (cached.length && (cached[0] as any).value?.semesterId) {
-        semesterId = (cached[0] as any).value.semesterId;
+      const cached = await readAppConfig<{ semesterId?: string }>("social_current_semester");
+      if (cached?.semesterId) {
+        semesterId = cached.semesterId;
         semesterSource = "cached";
       } else {
         // fetch semester list from VTOP
@@ -123,31 +129,24 @@ socialIdentitySyncRouter.post("/identity/sync", async (c) => {
     let version = 1;
     let publishedAt = new Date().toISOString();
     if (semesterId) {
-      const { rows } = await pool.query(
-        `INSERT INTO ${TIMETABLE_TABLE}
-           (owner_key, semester_id, busy_map, courses, slotmap_version, register_no, display_name)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7)
-         ON CONFLICT (owner_key, semester_id) DO UPDATE SET
-           busy_map = EXCLUDED.busy_map,
-           courses = EXCLUDED.courses,
-           slotmap_version = EXCLUDED.slotmap_version,
-           register_no = CASE WHEN EXCLUDED.register_no <> '' THEN EXCLUDED.register_no ELSE ${TIMETABLE_TABLE}.register_no END,
-           display_name = CASE WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name ELSE ${TIMETABLE_TABLE}.display_name END,
-           version = ${TIMETABLE_TABLE}.version + 1,
-           published_at = NOW()
-         RETURNING version, published_at`,
-        [
-          caller.ownerKey,
-          semesterId,
-          JSON.stringify(busyMap),
-          JSON.stringify(courses),
-          "v1",
-          caller.regNo,
-          caller.displayName,
-        ],
-      );
-      version = Number(rows[0].version);
-      publishedAt = new Date(rows[0].published_at).toISOString();
+      const row = await db.prepare(`INSERT INTO ${TIMETABLE_TABLE}
+             (owner_key, semester_id, busy_map, courses, slotmap_version, register_no, display_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (owner_key, semester_id) DO UPDATE SET
+             busy_map = excluded.busy_map,
+             courses = excluded.courses,
+             slotmap_version = excluded.slotmap_version,
+             register_no = CASE WHEN excluded.register_no <> '' THEN excluded.register_no ELSE ${TIMETABLE_TABLE}.register_no END,
+             display_name = CASE WHEN excluded.display_name <> '' THEN excluded.display_name ELSE ${TIMETABLE_TABLE}.display_name END,
+             version = ${TIMETABLE_TABLE}.version + 1,
+             published_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+           RETURNING version, published_at`)
+        .bind(caller.ownerKey, semesterId, JSON.stringify(busyMap), JSON.stringify(courses), "v1",
+          caller.regNo, caller.displayName).first<{ version: number; published_at: string }>();
+      if (row) {
+        version = Number(row.version);
+        publishedAt = new Date(row.published_at).toISOString();
+      }
     }
 
     // Build peer view (grants)
@@ -157,6 +156,7 @@ socialIdentitySyncRouter.post("/identity/sync", async (c) => {
 
     return c.json({
       success: true,
+      handles,
       identity: {
         ownerKey: caller.ownerKey,
         handle: generateHandle(caller.regNo),
