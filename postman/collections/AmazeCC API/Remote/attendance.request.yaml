@@ -1,7 +1,7 @@
 $kind: http-request
 name: Attendance
 method: POST
-url: '{{base_url}}/api/remote/attendance'
+url: "{{base_url}}/api/remote/attendance"
 order: 3000
 headers:
   Content-Type: application/json
@@ -11,5 +11,6 @@ body:
     {
       "cookies": "{{cookies}}",
       "csrf": "{{csrf}}",
-      "authorizedID": "{{authorizedID}}"
+      "authorizedID": "{{authorizedID}}",
+      "semesterId": "{{semesterID}}"
     }

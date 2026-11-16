@@ -6,7 +6,7 @@
  * so table names, SQL, hostnames and stack details never reach clients.
  */
 const INTERNAL_PATTERN =
-  /relation |column |syntax error|violates|duplicate key|constraint|permission denied for|password authentication|database|pg_|\bSQL\b|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|EPIPE|getaddrinfo|socket|certificate|\bSSL\b|\bTLS\b|Request failed with status|timeout of \d+ms|ADMIN_SECRET|ID_SALT|environment variable|_KEY\b|\/home\/|\/var\/|node_modules/i;
+  /relation |column |syntax error|violates|duplicate key|constraint|permission denied for|password authentication|database|pg_|\bSQL\b|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|EPIPE|getaddrinfo|socket|certificate|\bSSL\b|\bTLS\b|Request failed with status|timeout of \d+ms|ADMIN_SECRET|GENERATOR_KEY|environment variable|_KEY\b|\/home\/|\/var\/|node_modules/i;
 
 export function publicErrorMessage(err: unknown, fallback = "Internal server error"): string {
   if (!(err instanceof Error)) {

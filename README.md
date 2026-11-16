@@ -167,7 +167,7 @@ One call opts a student into **all current and future** `/api/services/*`.
 Identity is **always** resolved server-side (VTOP profile response, or the
 `sub` claim of a service token minted by this route) — the client can never
 name another student's enrollment. Rows live in `service_enrollments`
-(`owner_key` = HMAC(REGISTER NO, ID_SALT) — values are never stored).
+(`owner_key` = HMAC(REGISTER NO, GENERATOR_KEY) — values are never stored).
 
 Current registry (`src/lib/services.ts`): `marks-stats`.
 
@@ -190,7 +190,7 @@ valid on the direct host.
 - **Hyperdrive** `amazecc-db-direct` → `db.<project-ref>.supabase.co:5432` — serving real queries
   (e.g. `faculty/schools` ~600 ms)
 - **Queues**: `amazecc-sync` + consumer + `amazecc-sync-dlq`
-- **Secrets**: ADMIN_SECRET · ID_SALT · ADMIN_VTOP_IDS · VAPID keys (all pushed)
+- **Secrets**: ADMIN_SECRET · GENERATOR_KEY · ADMIN_VTOP_IDS · VAPID keys (all pushed)
 - **Verified end-to-end**: VTOP login/captcha from the edge ✓, admin auth + real DB counts ✓,
   enroll + remote routes ✓, 401 sweeps ✓
 
@@ -200,8 +200,8 @@ wrangler queues create amazecc-sync
 wrangler queues create amazecc-sync-dlq
 wrangler hyperdrive create amazecc-db-direct --connection-string="postgresql://postgres:…@db.<project-ref>.supabase.co:5432/postgres"
 #   → paste the id into wrangler.jsonc "hyperdrive"
-wrangler secret put ADMIN_SECRET          # required (≠ ID_SALT)
-wrangler secret put ID_SALT               # required
+wrangler secret put ADMIN_SECRET          # service-token signing key
+wrangler secret put GENERATOR_KEY         # required for keyed hashes and pseudonyms
 wrangler secret put ADMIN_VTOP_IDS        # optional superadmin list
 wrangler secret put NEXT_PUBLIC_VAPID_PUBLIC_KEY   # admin push
 wrangler secret put VAPID_PRIVATE_KEY              # admin push
@@ -212,7 +212,7 @@ Local dev (port 3100) needs **no** Hyperdrive/queues:
 
 ```bash
 DATABASE_URL=postgresql://… pnpm dev
-# or: cp .env.example .dev.vars   (ADMIN_SECRET / ID_SALT / ADMIN_VTOP_IDS, no HF binding)
+# or: cp .env.example .dev.vars   (ADMIN_SECRET / GENERATOR_KEY / ADMIN_VTOP_IDS, no HF binding)
 ```
 
 `npx wrangler deploy --dry-run` passes. Verified matrix: VTOP TLS + captcha

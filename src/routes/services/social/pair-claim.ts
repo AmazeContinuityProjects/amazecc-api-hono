@@ -9,7 +9,8 @@ import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import { identifyCaller, ensureSocialSchema, SOCIAL_TABLE, generateHandle } from "../../../../src/lib/social";
 import { getDbPool } from "../../../../src/lib/db";
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { hash } from "../../../../src/lib/generator";
 
 const MAX_GRANTS = 200;
 const HANDLE_RE = /^AMZ-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
@@ -85,9 +86,9 @@ socialPairClaimRouter.post("/pair/claim", async (c) => {
       grantId = existing[0].grant_id;
       visibility = existing[0].visibility;
     } else {
-      grantId = `grant_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      secret = `sec_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      const secretHash = createHash("sha256").update(secret).digest("hex");
+      grantId = `grant_${randomUUID()}`;
+      secret = `sec_${randomUUID()}`;
+      const secretHash = hash(`social-grant-secret:${secret}`);
       await pool.query(
         `INSERT INTO ${SOCIAL_TABLE} (grant_id, owner_a, owner_b, secret_hash, visibility)
          VALUES ($1, $2, $3, $4, $5)`,

@@ -85,7 +85,7 @@
  *   • value_token = HMAC of a 0-100 mark — brute-forceable (101 elements)
  *     if GENERATOR_KEY leaks.
  *   • prevMark is client-supplied and unverifiable without storing the mark.
- *   • No automatic collection — requires explicit /sync call.
+ *   • No automatic collection — requires explicit client contribution sync.
  *   • Used maskUserID (masked reg_no) instead of plaintext reg_no.
  *
  * This rewrite fixes: hash-based identity (GENERATOR_KEY), per-assessment
@@ -97,13 +97,7 @@
 import type { DbClient } from "./db";
 import { getDbPool } from "./db";
 import { assessmentKey as genAssessmentKey, hashMark, identityHash } from "./generator";
-import {
-  clearMarksForAssessment,
-  getAllMarkHashesForAssessment,
-  getStudentMarkHash,
-  ensureStudentMarksSchema,
-  studentKey,
-} from "./student-marks";
+import { migrateStudentMarksTable } from "./student-marks";
 
 export type Scope = "overall" | "assessment";
 
@@ -166,8 +160,7 @@ let schemaEnsured: Promise<void> | null = null;
 /**
  * Inline DDL (house style — no migrations directory).
  *
- * class_user_marks holds value_token (mark hash) per student per assessment.
- * student_marks holds the same hash (single source of truth for recount).
+ * class_user_marks holds the keyed mark hash per student per assessment.
  */
 export function ensureSchema(): Promise<void> {
   if (!schemaEnsured) {
@@ -205,7 +198,7 @@ export function ensureSchema(): Promise<void> {
           PRIMARY KEY (class_id, user_key, scope, assessment_key)
         );
       `);
-      await ensureStudentMarksSchema();
+      await migrateStudentMarksTable();
     })().catch((err: unknown) => {
       schemaEnsured = null;
       throw err;
@@ -317,7 +310,6 @@ export type ContributionResult = {
  */
 export async function recordContribution(
   client: DbClient,
-  regNo: string,
   ownerKey: string,
   c: Contribution,
   now: number,
@@ -442,15 +434,6 @@ export async function recordContribution(
     [c.classId, ownerKey, c.scope, assessmentKey, newToken, now],
   );
 
-  // ── STEP 5: Store the hash in student_marks (single source of truth) ──
-  await client.query(
-    `INSERT INTO student_marks (reg_no, class_id, scope, assessment_key, mark_hash, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (reg_no, class_id, scope, assessment_key)
-     DO UPDATE SET mark_hash = EXCLUDED.mark_hash, updated_at = EXCLUDED.updated_at`,
-    [regNo.trim().toUpperCase(), c.classId, c.scope, assessmentKey, newToken, now],
-  );
-
   return {
     outcome: recountTriggered ? "recounted" : storedToken ? "replaced" : "added",
     recountTriggered,
@@ -508,17 +491,14 @@ async function triggerRecount(
   scope: Scope,
   assessmentKey: string,
 ): Promise<void> {
-  // 1. Delete all student hashes for this assessment
-  await clearMarksForAssessment(classId, scope, assessmentKey, client);
-
-  // 2. Delete all class_user_marks rows for this assessment
+  // Delete all contribution hashes for this assessment.
   await client.query(
     `DELETE FROM class_user_marks
       WHERE class_id = $1 AND scope = $2 AND assessment_key = $3`,
     [classId, scope, assessmentKey],
   );
 
-  // 3. Reset the accumulator
+  // Reset the accumulator.
   const table = scope === "overall" ? "class_overall_stats" : "class_assessment_stats";
   const keyCols = scope === "overall" ? "class_id" : "class_id, assessment_key";
   const keyValues = scope === "overall" ? [classId] : [classId, assessmentKey];
@@ -544,11 +524,8 @@ export async function recountAssessment(
   await ensureSchema();
   const pool = getDbPool();
 
-  // Zero student_marks
-  const zeroed = await clearMarksForAssessment(classId, scope, assessmentKey);
-
-  // Zero class_user_marks
-  await pool.query(
+  // Zero contribution hashes.
+  const { rowCount } = await pool.query(
     `DELETE FROM class_user_marks
       WHERE class_id = $1 AND scope = $2 AND assessment_key = $3`,
     [classId, scope, assessmentKey],
@@ -567,7 +544,7 @@ export async function recountAssessment(
     keyValues,
   );
 
-  return { zeroed };
+  return { zeroed: Number(rowCount ?? 0) };
 }
 
 /* ── read path ────────────────────────────────────────────────────────────── */

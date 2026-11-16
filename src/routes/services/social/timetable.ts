@@ -8,6 +8,8 @@ import { Hono } from "hono";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import { identifyCaller, ensureSocialSchema, SOCIAL_TABLE, TIMETABLE_TABLE } from "../../../../src/lib/social";
 import { getDbPool } from "../../../../src/lib/db";
+import { createHash } from "node:crypto";
+import { hash } from "../../../../src/lib/generator";
 
 export const socialTimetableRouter = new Hono();
 
@@ -43,15 +45,25 @@ socialTimetableRouter.post("/timetable", async (c) => {
     const pool = getDbPool();
 
     // Find grant by secret
+    const secretHash = hash(`social-grant-secret:${body.secret}`);
+    // Accept old SHA-256 grant hashes once, then upgrade them in-place. New
+    // hashes always use the shared keyed generator.
+    const legacySecretHash = createHash("sha256").update(body.secret).digest("hex");
     const { rows: grantRows } = await pool.query(
-      `SELECT * FROM ${SOCIAL_TABLE} WHERE secret_hash = $1 AND revoked_at IS NULL`,
-      [body.secret],
+      `SELECT * FROM ${SOCIAL_TABLE} WHERE secret_hash = ANY($1::text[]) AND revoked_at IS NULL`,
+      [[secretHash, legacySecretHash]],
     );
     if (!grantRows.length) {
       return c.json(
         { success: false, error: "grant_invalid", detail: { detail: "Grant secret not found or revoked" } }, 403);
     }
     const grant = grantRows[0] as any;
+    if (grant.secret_hash === legacySecretHash) {
+      await pool.query(
+        `UPDATE ${SOCIAL_TABLE} SET secret_hash = $1 WHERE grant_id = $2`,
+        [secretHash, grant.grant_id],
+      );
+    }
 
     const callerKey = result.caller.ownerKey;
     const isParticipant =

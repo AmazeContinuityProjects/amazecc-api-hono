@@ -1,5 +1,0 @@
-$kind: http-request
-name: 'Marks Stats (GET)'
-method: GET
-url: '{{base_url}}/api/services/marks/stats'
-order: 3000

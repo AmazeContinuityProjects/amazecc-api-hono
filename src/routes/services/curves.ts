@@ -60,7 +60,7 @@ async function resolveRegNo(
   body: RequestBody,
 ): Promise<string | null> {
   // 1. AmazeID auth via DPoP
-  if (authHeader.toLowerCase().startsWith("dopop ")) {
+  if (authHeader.toLowerCase().startsWith("dpop ")) {
     // verifyAmazeSession needs the raw Request; we pass it via closure below.
     return null; // handled in route handler to access c.req.raw
   }
@@ -99,7 +99,7 @@ curvesRouter.post("/curves", async (c) => {
   // ── Resolve identity ──
   let regNo: string | null = null;
 
-  if (authHeader.toLowerCase().startsWith("dopop ")) {
+  if (authHeader.toLowerCase().startsWith("dpop ")) {
     // AmazeID auth via DPoP
     const identity = await verifyAmazeSession(c.req.raw);
     if (!identity) return adminUnauthorized();

@@ -24,6 +24,7 @@ export interface WorkerEnv {
    */
   AUTH_DB?: D1Database;
   ADMIN_SECRET?: string;
+  /** Optional legacy key, read only while re-keying old promotion rows. */
   ID_SALT?: string;
   ADMIN_VTOP_IDS?: string;
   TRUSTED_IP_HEADER?: string;

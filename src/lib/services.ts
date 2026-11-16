@@ -8,7 +8,7 @@
  *   - Bearer `serviceToken` minted by this module (typ "service", 24h TTL), or
  *   - VTOP session in the request body/query (cookies + authorizedID + csrf);
  *     the REGISTER NO is read from VTOP's own profile response, never from the
- *     body, then pseudonymized with ID_SALT before touching the database.
+ *     body, then pseudonymized with GENERATOR_KEY before touching the database.
  *
  * The service registry below is the single source of truth for which services
  * exist. Enrolling in "all" means every id in the registry, so future services

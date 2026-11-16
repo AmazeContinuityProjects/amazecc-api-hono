@@ -1,7 +1,8 @@
 $kind: http-request
 name: Login
 method: POST
-url: '{{base_url}}/api/remote/login'
+url: "{{base_url}}/api/remote/login"
+examples: .resources/login.resources/examples
 order: 1000
 headers:
   Content-Type: application/json
@@ -12,3 +13,13 @@ body:
       "username": "{{username}}",
       "password": "{{password}}"
     }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      const res = pm.response.json();
+      if (res.success) {
+          pm.collectionVariables.set("cookies", res.cookies);
+          pm.collectionVariables.set("csrf", res.csrf);
+          pm.collectionVariables.set("authorizedID", res.authorizedID);
+      }

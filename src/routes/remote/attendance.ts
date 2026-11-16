@@ -236,7 +236,7 @@ async function ingestAttendanceMarks(
       await client.query("BEGIN");
       const now = Date.now();
       for (const contribution of contributions) {
-        await recordContribution(client, regNo, ownerKey, contribution, now);
+        await recordContribution(client, ownerKey, contribution, now);
       }
       await client.query("COMMIT");
     } catch (err) {

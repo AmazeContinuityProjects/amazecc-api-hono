@@ -153,3 +153,4 @@ vite.config.ts.timestamp-*
 
 # Wrangler local state
 .wrangler/
+postman/
