@@ -40,7 +40,7 @@ function corsHeaders(): Record<string, string> {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
     "access-control-allow-headers":
-      "Content-Type, Authorization, X-Requested-With, X-CSRF-Token, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version, X-Club-Id",
+      "Content-Type, Authorization, DPoP, X-Requested-With, X-CSRF-Token, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version, X-Club-Id",
     "access-control-expose-headers": "Content-Disposition, Content-Length, Content-Type",
     "access-control-max-age": "86400",
   };

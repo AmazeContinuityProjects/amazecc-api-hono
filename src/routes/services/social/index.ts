@@ -1,9 +1,9 @@
 /**
  * /api/services/social/* — Social / friend-finder routes ported from legacy.
  *
- * All routes require Amaze ID (first-party guard). Identity within social is
- * established via VTOP session (identifyCaller) — VTOP is reachable from
- * Cloudflare egress, so social can go live natively.
+ * Routes use Amaze ID (first-party guard), with FFCS Friend Finder also
+ * accepting a verified VTOP session so students can enroll before linking ID.
+ * VTOP is reachable from Cloudflare egress, so social can run natively.
  */
 import { Hono } from "hono";
 import { socialIdentitySyncRouter } from "./identity-sync";

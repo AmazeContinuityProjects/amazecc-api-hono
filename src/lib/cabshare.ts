@@ -14,7 +14,11 @@ import { Hono } from "hono";
 import { verifyAmazeSession, adminUnauthorized } from "./amazeId";
 import { publicErrorMessage } from "./publicError";
 import { getDbPool } from "./db";
-import { upsertStudentProfile, getStudentProfileByRegNo } from "./student-profiles";
+import {
+  ensureStudentProfilesSchema,
+  getStudentProfileByRegNo,
+  upsertStudentProfile,
+} from "./student-profiles";
 import { regKey } from "./social";
 
 export const CABSHARE_TABLE = "cabshare_users";
@@ -56,6 +60,8 @@ export async function requireCabshareUser(
 /** Ensure cabshare tables exist (inline DDL, house style). */
 export async function ensureCabshareSchema(): Promise<void> {
   const pool = getDbPool();
+
+  await ensureStudentProfilesSchema();
 
   // cabshare_users: add owner_key column if missing
   await pool.query(`
@@ -163,30 +169,37 @@ export async function ensureCabshareUser(
 ): Promise<CabshareUser> {
   const pool = getDbPool();
   const ownerKey = regKey(regNo);
+  const profile = await getStudentProfileByRegNo(regNo);
+
+  const refreshExisting = async (userId: number): Promise<CabshareUser> => {
+    const { rows } = await pool.query(
+      `UPDATE ${CABSHARE_TABLE}
+          SET owner_key = $1,
+              name = COALESCE(NULLIF($2, ''), name),
+              phone_number = COALESCE($3, phone_number)
+        WHERE user_id = $4
+        RETURNING *`,
+      [ownerKey, profile?.display_name ?? null, profile?.phone_number ?? null, userId],
+    );
+    if (!rows.length) throw new Error(`Failed to refresh cabshare user ${userId}`);
+    return rows[0] as CabshareUser;
+  };
 
   // Try existing row by owner_key
   let result = await pool.query(
     `SELECT * FROM ${CABSHARE_TABLE} WHERE owner_key = $1 LIMIT 1`,
     [ownerKey],
   );
-  if (result.rows.length) return result.rows[0] as CabshareUser;
+  if (result.rows.length) return refreshExisting(Number(result.rows[0].user_id));
 
   // Try existing row by reg_number (legacy migration)
   result = await pool.query(
     `SELECT * FROM ${CABSHARE_TABLE} WHERE reg_number = $1 LIMIT 1`,
     [regNo],
   );
-  if (result.rows.length) {
-    const existing = result.rows[0] as CabshareUser;
-    await pool.query(
-      `UPDATE ${CABSHARE_TABLE} SET owner_key = $1 WHERE user_id = $2`,
-      [ownerKey, existing.user_id],
-    );
-    return { ...existing, owner_key: ownerKey };
-  }
+  if (result.rows.length) return refreshExisting(Number(result.rows[0].user_id));
 
   // Create new row — we only have reg_no; name/phone come from student_profiles
-  const profile = await getStudentProfileByRegNo(regNo);
   const name = profile?.display_name || regNo;
   const phone = profile?.phone_number || null;
 

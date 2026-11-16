@@ -54,8 +54,9 @@ export function identityHash(regNo: string): string {
 }
 
 /**
- * Assessment key hash: classId::component::title, byte-identical on both
- * sides of the client/server boundary.
+ * Assessment keys are keyed like every other generated identifier. The stats
+ * response includes assessment metadata so clients can join opaque keys
+ * without receiving or reproducing GENERATOR_KEY.
  */
 export function assessmentKey(classId: string, component: string, title: string): string {
   const normalised = title.trim().replace(/\s+/g, " ");

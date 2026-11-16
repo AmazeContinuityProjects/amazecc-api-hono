@@ -22,6 +22,14 @@ import fetchTimetable from "../../lib/fetchTimeTable";
 import { attendanceItem, courseItem } from "../../types/data/attendance";
 import { getDbPool } from "../../lib/db";
 import { upsertStudentProfile } from "../../lib/student-profiles";
+import { getMarks } from "../../lib/marks.htmlparser2";
+import type { CourseItem } from "../../types/data/marks";
+import {
+  ensureSchema,
+  ownerKeyFor,
+  recordContribution,
+  type Contribution,
+} from "../../lib/marksStats";
 
 export const attendanceRoute = new Hono();
 
@@ -92,6 +100,164 @@ function mergeAttendanceWithTimetable(attendance: attendanceItem[], timetable: c
   return merged;
 }
 
+function numericValue(value: unknown): number | null {
+  if (value === null || value === undefined || String(value).trim() === "" || String(value).trim() === "-") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function assessmentPercent(assessment: CourseItem["assessments"][number]): number | null {
+  const score = numericValue(assessment.scoredMark);
+  const maximum = numericValue(assessment.maxMark);
+  if (score === null || maximum === null || maximum <= 0) return null;
+  const percent = (score / maximum) * 100;
+  return percent >= 0 && percent <= 100 ? percent : null;
+}
+
+function assessmentTotals(course: CourseItem | undefined) {
+  let weightPercent = 0;
+  let weightedMarks = 0;
+  for (const assessment of course?.assessments ?? []) {
+    if (assessmentPercent(assessment) === null) continue;
+    weightPercent += numericValue(assessment.weightagePercent) ?? 0;
+    weightedMarks += numericValue(assessment.weightageMark) ?? 0;
+  }
+  return { weightPercent, weightedMarks };
+}
+
+function overallPercent(theory: CourseItem | undefined, lab: CourseItem | undefined): number | null {
+  const theoryTotals = assessmentTotals(theory);
+  const labTotals = assessmentTotals(lab);
+
+  let earned: number;
+  let available: number;
+  if (!theory) {
+    earned = labTotals.weightedMarks;
+    available = labTotals.weightPercent;
+  } else if (!lab) {
+    earned = theoryTotals.weightedMarks;
+    available = theoryTotals.weightPercent;
+  } else {
+    const theoryCredits = numericValue(theory.credits);
+    const labCredits = numericValue(lab.credits);
+    if (theoryCredits === null || labCredits === null || theoryCredits <= 0 || labCredits <= 0) {
+      return null;
+    }
+    const totalCredits = theoryCredits + labCredits;
+    earned =
+      (theoryCredits * theoryTotals.weightedMarks + labCredits * labTotals.weightedMarks) /
+      totalCredits;
+    available =
+      (theoryCredits * theoryTotals.weightPercent + labCredits * labTotals.weightPercent) /
+      totalCredits;
+  }
+
+  if (available <= 0) return null;
+  return Math.min(100, Math.ceil((earned / available) * 100 - 1e-9));
+}
+
+function buildMarkContributions(courses: CourseItem[]): Contribution[] {
+  const groups = new Map<string, { theory?: CourseItem; lab?: CourseItem }>();
+  for (const course of courses) {
+    const code = course.courseCode.trim();
+    if (!code || !course.classNbr) continue;
+    const isLab =
+      course.courseType.toLowerCase().includes("lab") || course.slot.toLowerCase().startsWith("l");
+    const group = groups.get(code) ?? {};
+    group[isLab ? "lab" : "theory"] = course;
+    groups.set(code, group);
+  }
+
+  const contributions: Contribution[] = [];
+  for (const group of groups.values()) {
+    const classId = group.theory?.classNbr || group.lab?.classNbr;
+    if (!classId) continue;
+
+    const overall = overallPercent(group.theory, group.lab);
+    if (overall !== null) {
+      contributions.push({
+        classId,
+        scope: "overall",
+        mark: overall,
+        serverObserved: true,
+      });
+    }
+
+    for (const component of ["theory", "lab"] as const) {
+      for (const assessment of group[component]?.assessments ?? []) {
+        const mark = assessmentPercent(assessment);
+        const title = assessment.title.trim();
+        if (mark === null || !title) continue;
+        contributions.push({
+          classId,
+          scope: "assessment",
+          component,
+          title,
+          mark,
+          serverObserved: true,
+        });
+      }
+    }
+  }
+  return contributions;
+}
+
+async function ingestAttendanceMarks(
+  cookies: string,
+  authorizedID: string,
+  csrf: string,
+  semesterId: string,
+  courseInfo: courseItem[],
+): Promise<Awaited<ReturnType<typeof getMarks>>> {
+  const courseCreditMap: Record<string, number> = {};
+  for (const course of courseInfo) {
+    const credits = parseFloat(course.LTPJC?.split(" ")[4] || "0");
+    if (!Number.isFinite(credits)) continue;
+    const code = course.courseCode.trim();
+    courseCreditMap[`${code}(T)`] = credits;
+    courseCreditMap[`${code}(L)`] = credits;
+  }
+
+  const marksResult = await getMarks(cookies, authorizedID, csrf, semesterId, courseCreditMap);
+  if (typeof marksResult === "string") return marksResult;
+
+  const contributions = buildMarkContributions(marksResult.courses);
+  if (contributions.length === 0) return marksResult;
+
+  try {
+    const regNo = authorizedID.trim().toUpperCase();
+    const ownerKey = await ownerKeyFor(regNo);
+    await ensureSchema();
+
+    const client = await getDbPool().connect();
+    try {
+      await client.query("BEGIN");
+      const now = Date.now();
+      for (const contribution of contributions) {
+        await recordContribution(client, regNo, ownerKey, contribution, now);
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackErr) {
+        console.error("[attendance] marks transaction rollback failed:", rollbackErr);
+      }
+      throw err;
+    } finally {
+      await client.release();
+    }
+  } catch (err) {
+    console.error(
+      "[attendance] marks ingestion failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  return marksResult;
+}
+
 attendanceRoute.post("/attendance", async (c) => {
   try {
     const { cookies, authorizedID, csrf, semesterId } = (await c.req
@@ -122,10 +288,23 @@ attendanceRoute.post("/attendance", async (c) => {
       String(csrf),
       String(semesterId ?? "")
     );
-    const courseCreditMap: Record<string, number> = {};
-    courseInfo.forEach((course) => {
-      courseCreditMap[course.courseCode.trim()] = parseFloat(course.LTPJC?.split(" ")[4] || "0");
-    });
+
+    let marksRes: Awaited<ReturnType<typeof getMarks>>;
+    try {
+      marksRes = await ingestAttendanceMarks(
+        cookieHeaderValue,
+        String(authorizedID),
+        String(csrf),
+        String(semesterId ?? ""),
+        courseInfo,
+      );
+    } catch (err) {
+      console.error(
+        "[attendance] marks fetch failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+      marksRes = err instanceof Error ? err.message : String(err);
+    }
 
     // ── FFCS enrollment (social only) ──
     // Record each course in ffcs_classes + ffcs_class_registrations keyed by
@@ -320,7 +499,7 @@ attendanceRoute.post("/attendance", async (c) => {
     const detailedAttendance: attendanceItem[] = await batchAll(mergedAttendance, fetchDetail, 3);
 
     return c.json(
-      { attRes: { semester: semesterId, attendance: detailedAttendance } },
+      { attRes: { semester: semesterId, attendance: detailedAttendance }, marksRes },
       { status: 200 }
     );
   } catch (err: unknown) {

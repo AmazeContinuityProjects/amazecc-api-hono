@@ -62,14 +62,9 @@
  * Data ingestion
  * -----------------------------------------------------------------------
  *
- * Marks enter the system in two places:
+ * Marks enter through POST /api/remote/attendance. When any user fetches
+ * attendance, we also fetch their marks and record each assessment.
  *
- *   1. POST /api/services/marks/sync  — explicit client sync (Amaze ID auth)
- *   2. POST /api/remote/attendance    — when ANY user fetches attendance,
- *                                         we ALSO fetch their marks and
- *                                         record each assessment (VTOP auth)
- *
- * Route (2) is the "marks taken when any person uses /attendance" behavior.
  * The attendance handler calls recordContribution for every assessment the
  * student has, keyed by reg_no (from VTOP profile → student_profiles).
  *
@@ -82,7 +77,7 @@
  *     — if a student's mark changes, it is silently ignored (no remove step).
  *   • Grade ranges = mean ± k·SD assuming a normal distribution. Fails for
  *     small classes (n < 30) and bimodal/multimodal distributions.
- *   • No per-student storage → no recount possible.
+ *    * No per-student storage → no recount possible.
  *   • Marks scraped on every attendance fetch — no caching, no change
  *     detection, no deduplication beyond the includesUsers check.
  *
@@ -106,8 +101,8 @@ import {
   clearMarksForAssessment,
   getAllMarkHashesForAssessment,
   getStudentMarkHash,
+  ensureStudentMarksSchema,
   studentKey,
-  upsertStudentMarkHash,
 } from "./student-marks";
 
 export type Scope = "overall" | "assessment";
@@ -142,9 +137,8 @@ export async function ownerKeyFor(regNumber: string): Promise<string> {
  *
  * Normalised title keeps "CAT 1" and "CAT   1" identical.
  *
- * The client must compute the same string: classId + "::" + component +
- * "::" + normalised title, then HMAC_SHA256(GENERATOR_KEY, that string),
- * sliced to 32 chars.
+ * The opaque key is HMAC-derived with GENERATOR_KEY. Assessment metadata is
+ * returned alongside the key so clients can join by component and title.
  */
 export async function assessmentKeyFor(
   classId: string,
@@ -194,6 +188,13 @@ export function ensureSchema(): Promise<void> {
           m2             DOUBLE PRECISION NOT NULL,
           PRIMARY KEY (class_id, assessment_key)
         );
+        CREATE TABLE IF NOT EXISTS class_assessment_metadata (
+          class_id       TEXT NOT NULL,
+          assessment_key TEXT NOT NULL,
+          component      TEXT NOT NULL,
+          title          TEXT NOT NULL,
+          PRIMARY KEY (class_id, assessment_key)
+        );
         CREATE TABLE IF NOT EXISTS class_user_marks (
           class_id       TEXT NOT NULL,
           user_key       TEXT NOT NULL,
@@ -203,13 +204,8 @@ export function ensureSchema(): Promise<void> {
           updated_at     BIGINT NOT NULL,
           PRIMARY KEY (class_id, user_key, scope, assessment_key)
         );
-        CREATE TABLE IF NOT EXISTS class_enrollment (
-          owner_key  TEXT NOT NULL,
-          class_id   TEXT NOT NULL,
-          updated_at BIGINT NOT NULL,
-          PRIMARY KEY (owner_key, class_id)
-        );
       `);
+      await ensureStudentMarksSchema();
     })().catch((err: unknown) => {
       schemaEnsured = null;
       throw err;
@@ -270,7 +266,7 @@ function removeFrom(acc: Acc, x: number): Acc {
   return { count, mean, m2 };
 }
 
-/** Sample standard deviation, guarded. count <= 1 → 0 (no spread to report). */
+/** Population standard deviation, guarded; the current published math divides by n. */
 export function standardDeviation(acc: Acc): number {
   if (acc.count <= 1) return 0;
   return Math.sqrt(Math.max(0, acc.m2) / acc.count);
@@ -292,6 +288,8 @@ export type Contribution = {
   component?: string;
   mark: number;
   prevMark?: number | null;
+  /** Current VTOP snapshot; unchanged values are skipped and changed values reset only their own scope before re-adding this snapshot. */
+  serverObserved?: boolean;
 };
 
 export type ContributionResult = {
@@ -310,9 +308,10 @@ export type ContributionResult = {
  * | present     | yes                               | replaced|
  * | present     | no (or no prevMark)               | recounted|
  *
- * "recounted" means: we zero every student's mark for this assessment and
- * reset the accumulator. The caller's mark is NOT applied — they must
- * re-submit after the recount completes.
+ * For an authoritative VTOP snapshot, a changed hash resets only that scope
+ * (one assessment or the course overall), then immediately adds the current
+ * student's newly observed value. Other students repopulate it as they fetch
+ * attendance again.
  *
  * Exact Welford lines used (see addTo / removeFrom above).
  */
@@ -334,9 +333,31 @@ export async function recordContribution(
   }
 
   const isOverall = c.scope === "overall";
+  const component = c.component?.trim().toLowerCase() ?? "";
+  const title = c.title?.trim().replace(/\s+/g, " ") ?? "";
+  if (!isOverall && (!component || !title)) {
+    return { outcome: "rejected", recountTriggered: false };
+  }
   const assessmentKey = isOverall
     ? OVERALL_KEY
-    : await genAssessmentKey(c.classId, c.component ?? "", c.title ?? "");
+    : await genAssessmentKey(c.classId, component, title);
+
+  if (c.serverObserved) {
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`,
+      [`${c.classId}::${c.scope}::${assessmentKey}`],
+    );
+  }
+
+  if (!isOverall) {
+    await client.query(
+      `INSERT INTO class_assessment_metadata (class_id, assessment_key, component, title)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (class_id, assessment_key)
+       DO UPDATE SET component = EXCLUDED.component, title = EXCLUDED.title`,
+      [c.classId, assessmentKey, component, title],
+    );
+  }
 
   // ── STEP 1: Look up the stored hash for this student/assessment ──
   const { rows } = await client.query(
@@ -347,28 +368,38 @@ export async function recordContribution(
   const storedToken = rows[0]?.value_token as string | undefined;
 
   // ── STEP 2: Decide outcome ──
+  let recountTriggered = false;
   if (storedToken) {
-    // We have a prior contribution. The client must prove they know the
-    // previous mark by hashing it and matching our stored token.
-    const prev = c.prevMark;
-    if (prev == null || !Number.isFinite(prev)) {
-      // No prevMark, or invalid — we can't safely remove the old mark.
-      // Hash mismatch → recount.
+    if (c.serverObserved) {
+      const currentHash = await valueToken(c.mark);
+      if (currentHash === storedToken) {
+        return { outcome: "skipped", recountTriggered: false };
+      }
       await triggerRecount(client, c.classId, c.scope, assessmentKey);
-      return { outcome: "recounted", recountTriggered: true };
+      recountTriggered = true;
+    } else {
+      // We have a prior contribution. The client must prove they know the
+      // previous mark by hashing it and matching our stored token.
+      const prev = c.prevMark;
+      if (prev == null || !Number.isFinite(prev)) {
+        // No prevMark, or invalid — we can't safely remove the old mark.
+        // Hash mismatch → recount.
+        await triggerRecount(client, c.classId, c.scope, assessmentKey);
+        return { outcome: "recounted", recountTriggered: true };
+      }
+      const prevHash = await valueToken(prev);
+      if (prevHash !== storedToken) {
+        // The client's claimed prevMark doesn't match what we stored.
+        // Either the key rotated, the data is corrupt, or the client is
+        // submitting a forged prevMark. Recount to be safe.
+        await triggerRecount(client, c.classId, c.scope, assessmentKey);
+        return { outcome: "recounted", recountTriggered: true };
+      }
+      // Hash matches → safe to remove the old mark, then add the new one.
+      await removeFromAccumulator(client, c.classId, c.scope, assessmentKey, prev);
     }
-    const prevHash = await valueToken(prev);
-    if (prevHash !== storedToken) {
-      // The client's claimed prevMark doesn't match what we stored.
-      // Either the key rotated, the data is corrupt, or the client is
-      // submitting a forged prevMark. Recount to be safe.
-      await triggerRecount(client, c.classId, c.scope, assessmentKey);
-      return { outcome: "recounted", recountTriggered: true };
-    }
-    // Hash matches → safe to remove the old mark, then add the new one.
-    await removeFromAccumulator(client, c.classId, c.scope, assessmentKey, prev);
   }
-  // No stored token → new contributor. Just add.
+  // No stored token, or an authoritative snapshot after recount → add.
 
   // ── STEP 3: Update the Welford accumulator ──
   const table = isOverall ? "class_overall_stats" : "class_assessment_stats";
@@ -412,17 +443,17 @@ export async function recordContribution(
   );
 
   // ── STEP 5: Store the hash in student_marks (single source of truth) ──
-  await upsertStudentMarkHash(
-    regNo, // plaintext reg_no (not the hashed ownerKey)
-    c.classId,
-    c.scope,
-    assessmentKey,
-    c.mark,
+  await client.query(
+    `INSERT INTO student_marks (reg_no, class_id, scope, assessment_key, mark_hash, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (reg_no, class_id, scope, assessment_key)
+     DO UPDATE SET mark_hash = EXCLUDED.mark_hash, updated_at = EXCLUDED.updated_at`,
+    [regNo.trim().toUpperCase(), c.classId, c.scope, assessmentKey, newToken, now],
   );
 
   return {
-    outcome: storedToken ? "replaced" : "added",
-    recountTriggered: false,
+    outcome: recountTriggered ? "recounted" : storedToken ? "replaced" : "added",
+    recountTriggered,
   };
 }
 
@@ -465,10 +496,11 @@ async function removeFromAccumulator(
 }
 
 /**
- * Recount trigger: zero every student's mark for this assessment and reset
- * the accumulator to {0, 0, 0}. Clients must re-submit their marks.
+ * Recount trigger: clear every stored contribution for this scope and reset
+ * its accumulator. The current VTOP snapshot is then added by the caller;
+ * other students repopulate the cohort as they fetch attendance again.
  *
- * Called when a hash mismatch is detected (prevMark hash != stored token).
+ * Called when a stored hash differs from the newly observed mark.
  */
 async function triggerRecount(
   client: DbClient,
@@ -477,7 +509,7 @@ async function triggerRecount(
   assessmentKey: string,
 ): Promise<void> {
   // 1. Delete all student hashes for this assessment
-  await clearMarksForAssessment(classId, scope, assessmentKey);
+  await clearMarksForAssessment(classId, scope, assessmentKey, client);
 
   // 2. Delete all class_user_marks rows for this assessment
   await client.query(
@@ -540,11 +572,19 @@ export async function recountAssessment(
 
 /* ── read path ────────────────────────────────────────────────────────────── */
 
+export type AssessmentStats = {
+  count: number;
+  mean: number;
+  sd: number;
+  component?: string;
+  title?: string;
+};
+
 export type ClassStats = {
   count: number;
   mean: number;
   sd: number;
-  assessments: Record<string, { count: number; mean: number; sd: number }>;
+  assessments: Record<string, AssessmentStats>;
 };
 
 export async function statsForClasses(
@@ -561,8 +601,12 @@ export async function statsForClasses(
       [unique],
     ),
     pool.query(
-      `SELECT class_id, assessment_key, count, mean, m2
-         FROM class_assessment_stats WHERE class_id = ANY($1)`,
+      `SELECT stats.class_id, stats.assessment_key, stats.count, stats.mean, stats.m2,
+              metadata.component, metadata.title
+         FROM class_assessment_stats AS stats
+         LEFT JOIN class_assessment_metadata AS metadata
+           USING (class_id, assessment_key)
+        WHERE stats.class_id = ANY($1)`,
       [unique],
     ),
   ]);
@@ -591,6 +635,8 @@ export async function statsForClasses(
       count: acc.count,
       mean: acc.mean,
       sd: standardDeviation(acc),
+      ...(typeof row.component === "string" ? { component: row.component } : {}),
+      ...(typeof row.title === "string" ? { title: row.title } : {}),
     };
   }
 
@@ -603,48 +649,6 @@ function toAcc(row: Record<string, unknown>): Acc {
     mean: Number(row.mean),
     m2: Number(row.m2),
   };
-}
-
-/* ── enrollment ───────────────────────────────────────────────────────────── */
-
-/**
- * Record which classes a student is enrolled in. Written from the class list
- * that the attendance/marks fetch returned — trustworthy because it came
- * from VTOP under the caller's own cookies.
- */
-export async function recordEnrollment(
-  ownerKey: string,
-  classIds: string[],
-  now: number,
-): Promise<void> {
-  if (classIds.length === 0) return;
-  const pool = getDbPool();
-  await pool.query(
-    `INSERT INTO class_enrollment (owner_key, class_id, updated_at)
-     SELECT $1, c, $2
-       FROM unnest($3::text[]) AS c
-     ON CONFLICT (owner_key, class_id)
-     DO UPDATE SET updated_at = EXCLUDED.updated_at`,
-    [ownerKey, now, classIds],
-  );
-}
-
-/**
- * Narrow a caller-supplied class list to the ones they are enrolled in.
- * The caller cannot enumerate cohorts they don't belong to.
- */
-export async function enrolledSubset(
-  ownerKey: string,
-  classIds: string[]
-): Promise<string[]> {
-  if (classIds.length === 0) return [];
-  const pool = getDbPool();
-  const { rows } = await pool.query(
-    `SELECT class_id FROM class_enrollment
-      WHERE owner_key = $1 AND class_id = ANY($2)`,
-    [ownerKey, classIds],
-  );
-  return rows.map((r: { class_id: string }) => r.class_id);
 }
 
 /**

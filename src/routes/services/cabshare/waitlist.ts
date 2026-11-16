@@ -20,6 +20,18 @@ cabshareWaitlistRouter.post("/waitlist", async (c) => {
     await ensureCabshareSchema();
     const user = await ensureCabshareUser(regNo);
 
+    // Phone number is mandatory to use cab share
+    if (!user.phone_number) {
+      return c.json(
+        {
+          success: false,
+          error: "phone_number_required",
+          detail: { detail: "Please register your phone number via /api/profile/phone before joining the waitlist" },
+        },
+        403,
+      );
+    }
+
     const body = (await c.req.json().catch(() => ({}))) as {
       hub_id?: string | number;
       travel_date?: string;

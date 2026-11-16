@@ -6,7 +6,7 @@
  * Auth: Amaze ID (DPoP).
  */
 import { Hono } from "hono";
-import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_BLOCKS_TABLE, CABSHARE_MATCH_EVENTS_TABLE, cabshareUserIdFromOwnerKey } from "../../../../src/lib/cabshare";
+import { requireCabshareUser, ensureCabshareSchema, ensureCabshareUser, CABSHARE_TRIPS_TABLE, CABSHARE_BLOCKS_TABLE, CABSHARE_MATCH_EVENTS_TABLE, CABSHARE_TABLE, cabshareUserIdFromOwnerKey } from "../../../../src/lib/cabshare";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import { getDbPool } from "../../../../src/lib/db";
 
@@ -20,6 +20,18 @@ cabshareMatchRouter.post("/match", async (c) => {
     await ensureCabshareSchema();
     const user = await ensureCabshareUser(regNo);
     const userId = user.user_id;
+
+    // Phone number is mandatory to use cab share
+    if (!user.phone_number) {
+      return c.json(
+        {
+          success: false,
+          error: "phone_number_required",
+          detail: { detail: "Please register your phone number via /api/profile/phone before requesting a match" },
+        },
+        403,
+      );
+    }
 
     const body = (await c.req.json().catch(() => ({}))) as {
       trip_id?: string | number;
@@ -91,7 +103,11 @@ cabshareMatchRouter.post("/match", async (c) => {
 
     if (body.action === "accept" || body.action === "reject") {
       const { rows: matchRows } = await pool.query(
-        `SELECT owner_id FROM ${CABSHARE_MATCH_EVENTS_TABLE} WHERE id = $1`,
+        `SELECT m.owner_id, m.requester_id, u1.phone_number as requester_phone, u2.phone_number as owner_phone
+         FROM ${CABSHARE_MATCH_EVENTS_TABLE} m
+         JOIN ${CABSHARE_TABLE} u1 ON m.requester_id = u1.user_id
+         JOIN ${CABSHARE_TABLE} u2 ON m.owner_id = u2.user_id
+         WHERE m.id = $1`,
         [body.match_id],
       );
       if (!matchRows.length) {
@@ -110,8 +126,37 @@ cabshareMatchRouter.post("/match", async (c) => {
         `UPDATE ${CABSHARE_MATCH_EVENTS_TABLE} SET status = $1 WHERE id = $2`,
         [body.action === "accept" ? "accepted" : "rejected", body.match_id],
       );
+
+      if (body.action === "accept") {
+        const requester = matchRows[0];
+        // Both parties must have a phone number to share
+        if (!requester.requester_phone || !requester.owner_phone) {
+          return c.json(
+            {
+              success: false,
+              error: "phone_number_missing",
+              detail: {
+                detail:
+                  "Both parties must register a phone number via /api/profile/phone before accepting",
+              },
+            },
+            403,
+          );
+        }
+        return c.json(
+          {
+            success: true,
+            message: "Request accepted",
+            phone_sharing: {
+              requester_phone: requester.requester_phone,
+              owner_phone: requester.owner_phone,
+            },
+          },
+          200,
+        );
+      }
       return c.json(
-        { success: true, message: `Request ${body.action}ed` },
+        { success: true, message: "Request rejected" },
         200,
       );
     }

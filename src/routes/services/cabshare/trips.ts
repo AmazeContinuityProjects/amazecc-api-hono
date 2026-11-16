@@ -19,6 +19,18 @@ cabshareTripsRouter.post("/trips", async (c) => {
     await ensureCabshareSchema();
     const user = await ensureCabshareUser(regNo);
 
+    // Phone number is mandatory to create a cab share trip
+    if (!user.phone_number) {
+      return c.json(
+        {
+          success: false,
+          error: "phone_number_required",
+          detail: { detail: "Please register your phone number via /api/profile/phone before creating a trip" },
+        },
+        403,
+      );
+    }
+
     const body = (await c.req.json().catch(() => ({}))) as {
       hub_id?: string | number;
       travel_date?: string;

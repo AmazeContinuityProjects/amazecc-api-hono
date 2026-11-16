@@ -47,6 +47,10 @@ export function guardFor(path: string): Guard | null {
 export async function guardRequest(req: Request): Promise<Response | null> {
   const url = new URL(req.url);
   const path = url.pathname;
+  // FFCS Friend Finder supports VTOP-session-only sign-in for enrollment and
+  // returning users. Its route verifies Amaze ID when present, or validates
+  // the supplied VTOP session itself before reading or changing any state.
+  if (path.replace(/\/+$/, "") === "/api/social/ffcs-match" && req.method === "POST") return null;
   const guard = guardFor(path);
   if (!guard) return null; // not guarded
 

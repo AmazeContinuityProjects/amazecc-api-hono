@@ -4,7 +4,6 @@
  */
 import { Hono } from "hono";
 
-import { marksStatsRoute } from "./marks-stats";
 import { marksTokensRoute } from "./marks-tokens";
 import { curvesRouter } from "./curves";
 import { enrollRoute } from "./enroll";
@@ -13,7 +12,6 @@ import { socialRouter } from "./social";
 
 export const servicesRouter = new Hono();
 
-servicesRouter.route("/", marksStatsRoute);
 servicesRouter.route("/", marksTokensRoute);
 servicesRouter.route("/", curvesRouter);
 servicesRouter.route("/", enrollRoute);

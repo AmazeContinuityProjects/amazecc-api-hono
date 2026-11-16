@@ -29,6 +29,7 @@ cabshareAuthRouter.post("/auth", async (c) => {
         phone_number: user.phone_number,
         reg_number: user.reg_number,
       },
+      phone_required: !user.phone_number,
     });
   } catch (err: unknown) {
     console.error("[cabshare] auth error:", err);

@@ -5,12 +5,17 @@
  *   1. VTOP Auth: body { cookies, authorizedID, csrf } → call VTOP profile → reg_no
  *   2. AmazeID: header Authorization: DPoP <token> → verifyAmazeSession → vtopRegNo → reg_no
  *
- * Body: { classId?, scope?, assessmentKey?, semesterId? }
+ * Body: { classIds[]?, classId?, scope?, assessmentKey?, semesterId? }
  *   - scope: "overall" | "assessment" (default "overall")
  *   - assessmentKey: required when scope === "assessment"
+ *   - classIds: batch mode for the app's cohort-statistics view; enrollment is
+ *     checked against FFCS registrations and both overall/assessment stats return.
  *
- * Returns:
- *   { success, classId, stats: { count, mean, sd }, classmates: [{ reg_no, display_name, handle }] }
+ * Returns (single class):
+ *   { success, classId, stats, classmates }
+ *
+ * Returns (batch):
+ *   { success, stats: { [classId]: { count, mean, sd, assessments } } }
  *
  * Classmates = every other student enrolled in the same class_id
  * (from ffcs_class_registrations), joined with student_profiles for names.
@@ -24,16 +29,13 @@ import {
   adminUnauthorized,
 } from "../../lib/amazeId";
 import {
-  upsertStudentProfile,
-  getStudentProfileByRegNo,
-} from "../../lib/student-profiles";
-import {
   vtopPostForm,
   readText,
   cookieHeader,
   formParams,
 } from "../../lib/vtop";
 import { parseStudentProfile } from "../../lib/parsers/student-profile";
+import { ensureSchema, statsForClasses } from "../../lib/marksStats";
 
 export const curvesRouter = new Hono();
 
@@ -41,18 +43,12 @@ function fail(status: number, error: string, extra?: Record<string, unknown>) {
   return Response.json({ success: false, error, ...extra }, { status });
 }
 
-type Acc = { count: number; mean: number; m2: number };
-
-function sd(acc: Acc): number {
-  if (acc.count <= 1) return 0;
-  return Math.sqrt(Math.max(0, acc.m2) / acc.count);
-}
-
 type RequestBody = {
   cookies?: string | string[];
   authorizedID?: string;
   csrf?: string;
   semesterId?: string;
+  classIds?: string[];
   classId?: string;
   scope?: "overall" | "assessment";
   assessmentKey?: string;
@@ -92,9 +88,9 @@ async function resolveRegNo(
   }
 }
 
-curvesRouter.post("/", async (c) => {
+curvesRouter.post("/curves", async (c) => {
   const ip = getClientIp(c.req.raw);
-  const rl = checkRateLimit("curves:${ip}", 60, 60_000);
+  const rl = checkRateLimit(`curves:${ip}`, 60, 60_000);
   if (!rl.allowed) return rateLimitResponse(rl.retryAfterMs);
 
   const authHeader = c.req.raw.headers.get("authorization") ?? "";
@@ -122,12 +118,6 @@ curvesRouter.post("/", async (c) => {
     if (!regNo) return adminUnauthorized();
   }
 
-  const { classId, scope = "overall", assessmentKey, semesterId } = body;
-
-  if (!classId || typeof classId !== "string") {
-    return fail(400, "missing_classId", { detail: "classId is required" });
-  }
-
   const pool = getDbPool();
 
   try {
@@ -138,6 +128,42 @@ curvesRouter.post("/", async (c) => {
        ON CONFLICT (reg_no) DO NOTHING`,
       [regNo],
     );
+    await ensureSchema();
+
+    if (body.classIds !== undefined) {
+      if (!Array.isArray(body.classIds) || body.classIds.length > 100) {
+        return fail(400, "invalid_classIds", {
+          detail: "classIds must be an array containing at most 100 class ids",
+        });
+      }
+
+      const requested = Array.from(
+        new Set(
+          body.classIds.filter(
+            (id): id is string => typeof id === "string" && id.length > 0 && id.length <= 64,
+          ),
+        ),
+      );
+      if (requested.length === 0) {
+        return fail(400, "no_valid_classIds", { detail: "No usable class ids were provided" });
+      }
+
+      const semester = body.semesterId?.trim() || null;
+      const enrollment = await pool.query(
+        `SELECT DISTINCT class_id FROM ffcs_class_registrations
+          WHERE register_no = $1 AND class_id = ANY($2::text[])
+            AND ($3::text IS NULL OR semester_id = $3)`,
+        [regNo, requested, semester],
+      );
+      const allowed = enrollment.rows.map((row: { class_id: string }) => row.class_id);
+      const stats = await statsForClasses(allowed);
+      return c.json({ success: true, stats }, { status: 200 });
+    }
+
+    const { classId, scope = "overall", assessmentKey, semesterId } = body;
+    if (!classId || typeof classId !== "string") {
+      return fail(400, "missing_classId", { detail: "classId is required" });
+    }
 
     // ── Verify enrollment: caller must be registered for this class ──
     const semester = semesterId || "";
@@ -154,44 +180,17 @@ curvesRouter.post("/", async (c) => {
     }
 
     // ── Curve stats ──
-    let stats: { count: number; mean: number; sd: number };
+    const cohort = (await statsForClasses([classId]))[classId]!;
+    let stats: { count: number; mean: number; sd: number; component?: string; title?: string };
     if (scope === "assessment") {
       if (!assessmentKey) {
         return fail(400, "missing_assessmentKey", {
           detail: "assessmentKey is required when scope is 'assessment'",
         });
       }
-      const { rows } = await pool.query(
-        `SELECT count, mean, m2 FROM class_assessment_stats
-          WHERE class_id = $1 AND assessment_key = $2`,
-        [classId, assessmentKey],
-      );
-      if (rows.length === 0) {
-        stats = { count: 0, mean: 0, sd: 0 };
-      } else {
-        const acc: Acc = {
-          count: Number(rows[0].count),
-          mean: Number(rows[0].mean),
-          m2: Number(rows[0].m2),
-        };
-        stats = { count: acc.count, mean: acc.mean, sd: sd(acc) };
-      }
+      stats = cohort.assessments[assessmentKey] ?? { count: 0, mean: 0, sd: 0 };
     } else {
-      // scope === "overall"
-      const { rows } = await pool.query(
-        `SELECT count, mean, m2 FROM class_overall_stats WHERE class_id = $1`,
-        [classId],
-      );
-      if (rows.length === 0) {
-        stats = { count: 0, mean: 0, sd: 0 };
-      } else {
-        const acc: Acc = {
-          count: Number(rows[0].count),
-          mean: Number(rows[0].mean),
-          m2: Number(rows[0].m2),
-        };
-        stats = { count: acc.count, mean: acc.mean, sd: sd(acc) };
-      }
+      stats = { count: cohort.count, mean: cohort.mean, sd: cohort.sd };
     }
 
     // ── Classmates: every other student in the same class ──

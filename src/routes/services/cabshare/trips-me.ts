@@ -33,7 +33,8 @@ cabshareTripsMeRouter.get("/trips/me", async (c) => {
     // Add requests per trip
     for (const trip of myTrips) {
       const { rows: reqs } = await pool.query(
-        `SELECT m.id as match_id, m.status, u.name, u.reg_number, u.phone_number
+        `SELECT m.id as match_id, m.status, u.name, u.reg_number,
+                CASE WHEN m.status = 'accepted' THEN u.phone_number ELSE NULL END as phone_number
          FROM ${CABSHARE_MATCH_EVENTS_TABLE} m
          JOIN ${CABSHARE_TABLE} u ON m.requester_id = u.user_id
          WHERE m.trip_id = $1
@@ -45,7 +46,8 @@ cabshareTripsMeRouter.get("/trips/me", async (c) => {
 
     // joined_trips: trips I've requested to join
     const { rows: joined } = await pool.query(
-      `SELECT t.*, h.hub_name, h.city, m.status as match_status, u.name as owner_name, u.phone_number as owner_phone
+      `SELECT t.*, h.hub_name, h.city, m.status as match_status, u.name as owner_name,
+              CASE WHEN m.status = 'accepted' THEN u.phone_number ELSE NULL END as owner_phone
        FROM ${CABSHARE_MATCH_EVENTS_TABLE} m
        JOIN ${CABSHARE_TRIPS_TABLE} t ON m.trip_id = t.trip_id
        JOIN ${CABSHARE_HUBS_TABLE} h ON t.hub_id = h.hub_id

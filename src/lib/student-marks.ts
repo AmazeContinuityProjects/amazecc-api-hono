@@ -30,6 +30,7 @@
  * initialized from it that the student later claims.
  */
 import { getDbPool } from "./db";
+import type { DbClient } from "./db";
 import { hashMark, identityHash } from "./generator";
 
 const STUDENT_MARKS_TABLE = "student_marks";
@@ -157,10 +158,11 @@ export async function clearMarksForAssessment(
   classId: string,
   scope: "overall" | "assessment",
   assessmentKey: string,
+  queryable?: Pick<DbClient, "query">,
 ): Promise<number> {
-  await ensureStudentMarksSchema();
-  const pool = getDbPool();
-  const { rowCount } = await pool.query(
+  if (!queryable) await ensureStudentMarksSchema();
+  const db = queryable ?? getDbPool();
+  const { rowCount } = await db.query(
     `DELETE FROM ${STUDENT_MARKS_TABLE}
       WHERE class_id = $1 AND scope = $2 AND assessment_key = $3`,
     [classId, scope, assessmentKey],

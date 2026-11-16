@@ -90,7 +90,6 @@ Bundle ≈ **2.3 MB raw / 462 KB gzip**.
 | `POST /api/remote/login` | `/api/login` | captcha solved in-worker; enqueues daily club sync to `SYNC_QUEUE` |
 | `POST /api/remote/whoami` | `/api/whoami` | 10 sequential page scrapes, identity merged |
 | `POST /api/remote/attendance` | `/api/attendance` | cheerio variant |
-| `POST /api/remote/attendance/htmlparser2` | `/api/attendance/htmlparser2` | lower-CPU variant (recommended); records class enrollment |
 | `POST /api/remote/grades` | `/api/grades` | overall + semester history |
 | `POST /api/remote/ffcs` | `/api/ffcs` | registration/feedback/wishlist/schedule/qcm |
 | `POST /api/remote/finance` | `/api/finance` | dues/receipts/wallet/bank/library |
@@ -113,7 +112,7 @@ Bundle ≈ **2.3 MB raw / 462 KB gzip**.
 | Route | Port of | Notes |
 |---|---|---|
 | `POST /api/services/marks/sync` | `/api/marks/sync` | identity resolved from VTOP; HMAC tokens; Welford stats |
-| `POST /api/services/marks/stats` | `/api/marks/stats` | enrollment-gated class cohort stats (POST only) |
+| `POST /api/services/curves` | **new** | FFCS-registration-gated batch cohort stats; also serves single-class curves with classmates |
 | `POST /api/services/marks/tokens` | `/api/marks/tokens` | HMAC tokens + legacy associations |
 | `POST /api/services/enroll` | **new** | unified enrollment (see below) |
 | `GET /api/services/enroll` | **new** | enrollment state (Bearer or `?cookies=&authorizedID=&csrf=`) |
@@ -229,8 +228,7 @@ authenticated admin 200.
   custom-CA problem simply doesn't exist.
 - **Scraping stays inline** (the client needs the answer ASAP). Network wait
   doesn't count against the 10 ms CPU; parsing does — the hot scrapers use
-  the htmlparser2 path where available (`attendance/htmlparser2`), and cheerio
-  elsewhere (same parsers as before, O(small doc)).
+  route-specific parsers (same parsers as before, O(small doc)).
 - **Background work goes to the queue**: the daily club sync (enqueued by
   login) runs in the `SYNC_QUEUE` consumer. Cron-style jobs can use the same
   queue when `/api/cron/*` is ported.
@@ -255,14 +253,14 @@ authenticated admin 200.
 | `/api/login` | `/api/remote/login` |
 | `/api/whoami` | `/api/remote/whoami` |
 | `/api/attendance` | `/api/remote/attendance` |
-| `/api/attendance/htmlparser2` | `/api/remote/attendance/htmlparser2` |
 | `/api/grades` | `/api/remote/grades` |
 | `/api/ffcs` | `/api/remote/ffcs` |
 | `/api/finance` | `/api/remote/finance` |
 | `/api/hostel` · `/api/od` · `/api/curriculum*` · `/api/course-page` | `/api/remote/…` |
 | `/api/lms-data` · `/api/vitol-data` | `/api/remote/lms-data` · `/api/remote/vitol-data` |
 | `/api/transport` · `/api/circulars*` · `/api/calendar` · `/api/bulk` | `/api/remote/…` |
-| `/api/marks/sync` · `/api/marks/stats` · `/api/marks/tokens` | `/api/services/marks/*` |
+| `/api/marks/sync` · `/api/marks/tokens` | `/api/services/marks/*` |
+| `/api/curves` | `/api/services/curves` |
 | `/api/faculty/scrape` · `/api/faculty/schools` | `/api/services/faculty/*` |
 | `/api/admin/*` | unchanged shape |
 | `/api/docs` · `/api/status` · `/api/health` | docs dropped in this port; status/health kept at root |
