@@ -16,7 +16,7 @@
  *                     Hyperdrive - use the direct host.
  *   env.SYNC_QUEUE -> queue "amazecc-sync" (producer + consumer, DLQ amazecc-sync-dlq)
  *
- * Secrets (already pushed): ADMIN_SECRET, ID_SALT, ADMIN_VTOP_IDS,
+ * Secrets (already pushed): ADMIN_SECRET, GENERATOR_KEY, ADMIN_VTOP_IDS,
  *   NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
  *
  * Auth migration (2026-11-13): /api/admin/* now requires an Amaze ID session
