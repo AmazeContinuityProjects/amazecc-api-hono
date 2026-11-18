@@ -239,10 +239,33 @@ function removeFrom(acc: Acc, x: number): Acc {
   return { count, mean, m2 };
 }
 
-/** Population standard deviation, guarded; the current published math divides by n. */
+/**
+ * Sample standard deviation (Bessel-corrected, `m2 / (n − 1)`), guarded.
+ *
+ * VIT computes σ over the whole class (FFCS Academic Regulations v5.0 §9.5). We only
+ * see the students who fetched, a subset of that class, so this is an estimate of the
+ * class σ; dividing by `n` understates it and squeezes every grade band toward the mean.
+ * Mirrors amazecc-api's `standardDeviation`.
+ */
 export function standardDeviation(acc: Acc): number {
   if (acc.count <= 1) return 0;
-  return Math.sqrt(Math.max(0, acc.m2) / acc.count);
+  return Math.sqrt(Math.max(0, acc.m2) / (acc.count - 1));
+}
+
+/**
+ * Below this many contributors only the count is published.
+ *
+ * A mean and σ are two equations in the contributors' marks: with one contributor the
+ * mean is their mark, and with two or three anyone who knows their own mark can solve
+ * for the rest. Mirrors `MIN_CURVE_SAMPLE` in the client's `gradeBoundaries.ts`, which
+ * does not curve below 5, and `MIN_PUBLISHED_COUNT` in amazecc-api.
+ */
+export const MIN_PUBLISHED_COUNT = 5;
+
+/** What a reader may see of one accumulator. */
+function publish(acc: Acc): { count: number; mean: number; sd: number } {
+  if (acc.count < MIN_PUBLISHED_COUNT) return { count: Math.max(0, acc.count), mean: 0, sd: 0 };
+  return { count: acc.count, mean: acc.mean, sd: standardDeviation(acc) };
 }
 
 /* ── write path ───────────────────────────────────────────────────────────── */
@@ -326,7 +349,11 @@ export async function buildContributionStatements(
         WHERE mine.class_id = ? AND mine.user_key = ? AND mine.scope = ?
           AND mine.assessment_key = ? AND mine.value_token <> ?)`)
     .bind(c.classId, c.scope, assessmentKey, c.classId, ownerKey, c.scope, assessmentKey, token));
-  statements.push(db.prepare(`UPDATE ${table} SET count = 0, mean = 0, m2 = 0 WHERE ${where} AND changes() = 1`)
+  // `changes()` here is the DELETE's row count: every contributor in this scope, not
+  // just this student. `= 1` only fired for a cohort of one, so a changed mark in any
+  // real class skipped the reset and the upsert below counted the student twice (and
+  // everyone whose row was just deleted gets counted again when they next fetch).
+  statements.push(db.prepare(`UPDATE ${table} SET count = 0, mean = 0, m2 = 0 WHERE ${where} AND changes() > 0`)
     .bind(...keys));
   statements.push(db.prepare(`INSERT OR IGNORE INTO class_user_marks
     (class_id, user_key, scope, assessment_key, value_token, updated_at, reg_no) VALUES (?, ?, ?, ?, ?, ?, ?)`)
@@ -459,7 +486,7 @@ export async function statsForClasses(classIds: string[]): Promise<Record<string
     const acc = toAcc(row);
     const id = row.class_id as string;
     if (out[id]) {
-      out[id] = { count: acc.count, mean: acc.mean, sd: standardDeviation(acc), assessments: out[id].assessments };
+      out[id] = { ...publish(acc), assessments: out[id].assessments };
     }
   }
   for (const row of assessments.results) {
@@ -467,9 +494,7 @@ export async function statsForClasses(classIds: string[]): Promise<Record<string
     if (!entry) continue;
     const acc = toAcc(row);
     entry.assessments[row.assessment_key as string] = {
-      count: acc.count,
-      mean: acc.mean,
-      sd: standardDeviation(acc),
+      ...publish(acc),
       ...(typeof row.component === "string" ? { component: row.component } : {}),
       ...(typeof row.title === "string" ? { title: row.title } : {}),
     };

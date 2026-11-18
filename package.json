@@ -10,7 +10,8 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test:marks-local": "wrangler d1 migrations apply amazecc-api --local && npx -y tsx scripts/test-marks-curves-local.ts"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
