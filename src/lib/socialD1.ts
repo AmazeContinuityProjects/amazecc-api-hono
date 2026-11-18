@@ -1,4 +1,5 @@
 import { getWorkerEnv } from "../env";
+import { HOUR, throttled } from "./edgeCache";
 import {
   FFCS_CLASSES_TABLE,
   FFCS_CLASS_REGISTRATIONS_TABLE,
@@ -51,6 +52,7 @@ export type FfcsMatchRow = {
 };
 
 const D1_BATCH_SIZE = 80;
+const OWNER_MIGRATION_TTL = 6 * HOUR;
 
 /** Return the service-data D1 binding; migrations own the social schema. */
 export async function ensureSocialInD1(): Promise<D1Database> {
@@ -61,6 +63,14 @@ export async function ensureSocialInD1(): Promise<D1Database> {
 
 /** Canonicalize older plaintext register-number social owners in D1. */
 export async function migrateD1SocialOwnerKey(registerNo: string, canonicalOwnerKey: string): Promise<void> {
+  if (!getWorkerEnv().APP_DB) return;
+  // One-time re-key that is a no-op once done; it ran on every ffc-match and
+  // identity-sync request, so skip D1 for this owner for a while after it succeeds.
+  await throttled("migrate-social-owner", `${registerNo.trim().toUpperCase()}|${canonicalOwnerKey}`,
+    OWNER_MIGRATION_TTL, () => runMigrateD1SocialOwnerKey(registerNo, canonicalOwnerKey));
+}
+
+async function runMigrateD1SocialOwnerKey(registerNo: string, canonicalOwnerKey: string): Promise<void> {
   const db = getWorkerEnv().APP_DB;
   if (!db) return;
   const normalized = registerNo.trim().toUpperCase();
@@ -185,6 +195,16 @@ export async function migrateD1FfcsOwnerKey(
   canonicalOwnerKey: string,
   semesterId: string,
 ): Promise<void> {
+  if (!getWorkerEnv().APP_DB) return;
+  await throttled("migrate-ffcs-owner", `${registerNo.trim().toUpperCase()}|${canonicalOwnerKey}|${semesterId}`,
+    OWNER_MIGRATION_TTL, () => runMigrateD1FfcsOwnerKey(registerNo, canonicalOwnerKey, semesterId));
+}
+
+async function runMigrateD1FfcsOwnerKey(
+  registerNo: string,
+  canonicalOwnerKey: string,
+  semesterId: string,
+): Promise<void> {
   const db = getWorkerEnv().APP_DB;
   if (!db) return;
   const normalized = registerNo.trim().toUpperCase();
@@ -192,6 +212,8 @@ export async function migrateD1FfcsOwnerKey(
       WHERE semester_id = ? AND (UPPER(register_no) = ? OR UPPER(owner_key) = ?)
         AND owner_key <> ?`)
     .bind(semesterId, normalized, normalized, canonicalOwnerKey).all<{ owner_key: string }>();
+  // Nothing to re-key (the usual case): don't read every match row in the semester.
+  if (oldKeys.results.length === 0) return;
   const matchRows = await readD1Matches(semesterId);
   const statements: D1PreparedStatement[] = [];
   for (const { owner_key: oldKey } of oldKeys.results) {
