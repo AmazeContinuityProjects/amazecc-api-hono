@@ -11,7 +11,6 @@ export const SECTION_KEYS = [
   "qbank",
   "buses",
   "transport",
-  "gorobo",
   "clubs",
   "cabshare",
   "fresher-resources",

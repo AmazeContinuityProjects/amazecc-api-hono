@@ -1,5 +1,0 @@
-$kind: http-request
-name: 'Get Gorobo Items'
-method: GET
-url: '{{base_url}}/api/admin/gorobo/items'
-order: 2000

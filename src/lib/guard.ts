@@ -21,13 +21,14 @@ const GUARDED: GuardedPath[] = [
   { test: (p) => p === "/api/qbank/upload" || p === "/api/qbank/upload/", guard: "amazeId" },
   // Social - any Amaze ID
   { test: (p) => p === "/api/social" || p.startsWith("/api/social/"), guard: "amazeId" },
+  // The social router is also mounted under /api/services. Its other handlers
+  // verify a VTOP session themselves, but GET ffcs-match does no auth of its
+  // own and returns every student's reg no/name/handle for the semester.
+  { test: (p) => p === "/api/services/ffcs-match", guard: "amazeId" },
   // Profile - any Amaze ID
   { test: (p) => p === "/api/profile" || p.startsWith("/api/profile/"), guard: "amazeId" },
   // Cabshare - any Amaze ID
   { test: (p) => p === "/api/cabshare" || p.startsWith("/api/cabshare/"), guard: "amazeId" },
-  // Gorobo orders - any Amaze ID; gorobo seed - section gorobo
-  { test: (p) => p === "/api/services/gorobo/orders" || p.startsWith("/api/services/gorobo/orders/"), guard: "amazeId" },
-  { test: (p) => p === "/api/services/gorobo/seed" || p.startsWith("/api/services/gorobo/seed/"), guard: { section: "gorobo" } },
   // Notifications - subscribe/unsubscribe are per-user (Amaze ID); status is public-by-endpoint; config/test are push admin
   { test: (p) => p === "/api/notifications/subscribe" || p === "/api/notifications/unsubscribe", guard: "amazeId" },
   // Koha - library patron lookup is personal data, not the public catalog
@@ -50,7 +51,8 @@ export async function guardRequest(req: Request): Promise<Response | null> {
   // FFCS Friend Finder supports VTOP-session-only sign-in for enrollment and
   // returning users. Its route verifies Amaze ID when present, or validates
   // the supplied VTOP session itself before reading or changing any state.
-  if (path.replace(/\/+$/, "") === "/api/social/ffcs-match" && req.method === "POST") return null;
+  const trimmed = path.replace(/\/+$/, "");
+  if ((trimmed === "/api/social/ffcs-match" || trimmed === "/api/services/ffcs-match") && req.method === "POST") return null;
   const guard = guardFor(path);
   if (!guard) return null; // not guarded
 
