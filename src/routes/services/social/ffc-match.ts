@@ -391,7 +391,7 @@ socialFfcsMatchRouter.get("/ffcs-match", async (c) => {
 socialFfcsMatchRouter.post("/ffcs-match", async (c) => {
   try {
     const body = (await c.req.json().catch(() => ({}))) as MatchBody;
-    const semesterId = body.semesterId?.trim().toUpperCase();
+    const semesterId = typeof body.semesterId === "string" ? body.semesterId.trim().toUpperCase() : undefined;
     if (!semesterId) {
       return c.json({ success: false, error: "semester_not_supported", detail: { detail: "semesterId is required" } }, 400);
     }

@@ -21,7 +21,7 @@ Identity is **Amaze ID** (`auth.amazecc.com`); this worker shares its D1 databas
 | `admin` | Only the sections in the user's `permissions` field (comma-separated, stored in D1) |
 | `user` | No admin surface |
 
-Section keys (`src/lib/permissions.ts`): `dashboard`, `qbank`, `buses`, `transport`, `gorobo`, `clubs`, `cabshare`, `fresher-resources`, `faculty-directories`, `push`, `settings`, `storage`, `users`, `ocr`, `migrate`, `audit-logs`.
+Section keys (`src/lib/permissions.ts`): `dashboard`, `qbank`, `buses`, `transport`, `clubs`, `cabshare`, `fresher-resources`, `faculty-directories`, `push`, `settings`, `storage`, `users`, `ocr`, `migrate`, `audit-logs`.
 
 `/api/admin/users*` and `/api/admin/migrate` are superadmin-only. Every other `/api/admin/*` and `/api/qbank/admin/*` route is section-gated. `/api/club-admin/*` stays on the VTOP-linked club token until the club flow migrates.
 
@@ -60,7 +60,7 @@ src/
   routes/
     remote/*.ts       VTOP (and LMS/Vitol/directory) scrapers
     services/*.ts     features atop remote + the database (marks, enroll, faculty)
-    admin/*.ts        admin CRUD (auth, gorobo, transport, users, push, …)
+    admin/*.ts        admin CRUD (auth, transport, users, push, …)
   lib/
     vtop.ts           fetch-based VTOP client (no axios, no TLS pinning)
     vtopLogin.ts      shared pre-login → captcha → dashboard attempt
@@ -133,12 +133,6 @@ Bundle ≈ **2.3 MB raw / 462 KB gzip**.
 | `GET/POST/DELETE /api/admin/clubs/representatives` | `/api/admin/clubs/representatives` |
 | `GET/POST/PUT/DELETE /api/admin/faculty-directories` | `/api/admin/faculty-directories` |
 | `GET/POST /api/admin/fresher-resources` · `PATCH/DELETE /api/admin/fresher-resources/:id` | `/api/admin/fresher-resources*` |
-| `GET /api/admin/gorobo/analytics` | `/api/admin/gorobo/analytics` |
-| `GET/POST /api/admin/gorobo/bundles` · `PUT/DELETE /api/admin/gorobo/bundles/:id` | `/api/admin/gorobo/bundles*` |
-| `GET/POST /api/admin/gorobo/items` · `PUT/DELETE /api/admin/gorobo/items/:id` · `PATCH /api/admin/gorobo/items/stock` | `/api/admin/gorobo/items*` |
-| `GET/POST /api/admin/gorobo/orders` · `GET/PUT/PATCH /api/admin/gorobo/orders/:id` | `/api/admin/gorobo/orders*` |
-| `POST /api/admin/gorobo/orders/:id/{archive,complete,confirm,unarchive}` | `/api/admin/gorobo/orders/[id]/*` |
-| `GET /api/admin/gorobo/wallet` · `POST /api/admin/gorobo/wallet/orders/:id/settle` | `/api/admin/gorobo/wallet*` |
 | `GET/POST /api/admin/migrate` | `/api/admin/migrate` |
 | `POST /api/admin/ocr` · `POST /api/admin/ocr/reset` | `/api/admin/ocr*` |
 | `POST /api/admin/push` | `/api/admin/push` (Web Push via WebCrypto) |

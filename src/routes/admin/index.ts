@@ -14,20 +14,6 @@ import * as clubsRepresentatives from "./clubs-representatives";
 import * as facultyDirectories from "./faculty-directories";
 import * as fresherResources from "./fresher-resources";
 import * as fresherResourcesId from "./fresher-resources-id";
-import * as goroboAnalytics from "./gorobo-analytics";
-import * as goroboBundles from "./gorobo-bundles";
-import * as goroboBundlesId from "./gorobo-bundles-id";
-import * as goroboItems from "./gorobo-items";
-import * as goroboItemsId from "./gorobo-items-id";
-import * as goroboItemsStock from "./gorobo-items-stock";
-import * as goroboOrders from "./gorobo-orders";
-import * as goroboOrdersId from "./gorobo-orders-id";
-import * as goroboOrdersArchive from "./gorobo-orders-archive";
-import * as goroboOrdersComplete from "./gorobo-orders-complete";
-import * as goroboOrdersConfirm from "./gorobo-orders-confirm";
-import * as goroboOrdersUnarchive from "./gorobo-orders-unarchive";
-import * as goroboWallet from "./gorobo-wallet";
-import * as goroboWalletSettle from "./gorobo-wallet-settle";
 import * as migrate from "./migrate";
 import * as ocr from "./ocr";
 import * as ocrReset from "./ocr-reset";
@@ -79,57 +65,6 @@ adminRouter.patch("/fresher-resources/:id", (c) =>
 );
 adminRouter.delete("/fresher-resources/:id", (c) =>
   fresherResourcesId.DELETE(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-
-/* ── GoRoBo back-office ─────────────────────────────────────────────────── */
-adminRouter.get("/gorobo/analytics", (c) => goroboAnalytics.GET(c.req.raw));
-
-adminRouter.get("/gorobo/bundles", (c) => goroboBundles.GET(c.req.raw));
-adminRouter.post("/gorobo/bundles", (c) => goroboBundles.POST(c.req.raw));
-adminRouter.put("/gorobo/bundles/:id", (c) =>
-  goroboBundlesId.PUT(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.delete("/gorobo/bundles/:id", (c) =>
-  goroboBundlesId.DELETE(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-
-adminRouter.get("/gorobo/items", (c) => goroboItems.GET(c.req.raw));
-adminRouter.post("/gorobo/items", (c) => goroboItems.POST(c.req.raw));
-adminRouter.put("/gorobo/items/:id", (c) =>
-  goroboItemsId.PUT(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.delete("/gorobo/items/:id", (c) =>
-  goroboItemsId.DELETE(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.patch("/gorobo/items/stock", (c) => goroboItemsStock.PATCH(c.req.raw));
-
-adminRouter.get("/gorobo/orders", (c) => goroboOrders.GET(c.req.raw));
-adminRouter.post("/gorobo/orders", (c) => goroboOrders.POST(c.req.raw));
-adminRouter.get("/gorobo/orders/:id", (c) =>
-  goroboOrdersId.GET(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.put("/gorobo/orders/:id", (c) =>
-  goroboOrdersId.PUT(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.patch("/gorobo/orders/:id", (c) =>
-  goroboOrdersId.PATCH(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.post("/gorobo/orders/:id/archive", (c) =>
-  goroboOrdersArchive.POST(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.post("/gorobo/orders/:id/complete", (c) =>
-  goroboOrdersComplete.POST(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.post("/gorobo/orders/:id/confirm", (c) =>
-  goroboOrdersConfirm.POST(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-adminRouter.post("/gorobo/orders/:id/unarchive", (c) =>
-  goroboOrdersUnarchive.POST(c.req.raw, ctx({ id: c.req.param("id") }))
-);
-
-adminRouter.get("/gorobo/wallet", (c) => goroboWallet.GET(c.req.raw));
-adminRouter.post("/gorobo/wallet/orders/:id/settle", (c) =>
-  goroboWalletSettle.POST(c.req.raw, ctx({ id: c.req.param("id") }))
 );
 
 /* ── migrate / ocr / misc ───────────────────────────────────────────────── */

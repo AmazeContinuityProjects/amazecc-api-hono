@@ -1,5 +1,0 @@
-$kind: http-request
-name: 'Gorobo Analytics'
-method: GET
-url: '{{base_url}}/api/admin/gorobo/analytics'
-order: 1000

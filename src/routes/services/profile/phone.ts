@@ -37,10 +37,15 @@ profilePhoneRouter.patch("/phone", async (c) => {
     await ensureStudentProfilesSchema();
 
     const body = (await c.req.json().catch(() => ({}))) as {
-      phone_number?: string | null;
+      phone_number?: unknown;
     };
 
-    const phoneNumber = body.phone_number ?? null;
+    // Require the field: a missing or non-string value used to clear the stored
+    // number (or 500). Send `null` explicitly to clear it.
+    if (body.phone_number !== null && typeof body.phone_number !== "string") {
+      return c.json({ success: false, error: "invalid_phone_number", detail: { detail: "phone_number must be a string or null" } }, 400);
+    }
+    const phoneNumber = body.phone_number;
     const sanitized = await updatePhoneNumber(identity.vtopRegNo, phoneNumber);
 
     return c.json({
