@@ -16,6 +16,9 @@ import {
 
 export const marksTokensRoute = new Hono();
 
+const TOKENS_CACHE_TTL_MS = 60_000;
+const tokensCache = new Map<string, { tokens: any[]; expiresAt: number }>();
+
 function fail(status: number, error: string, extra?: Record<string, unknown>) {
   return Response.json({ success: false, error, ...extra }, { status });
 }
@@ -61,7 +64,16 @@ marksTokensRoute.post("/marks/tokens", async (c) => {
 
     await ensureSchema();
     const ownerKey = await ownerKeyFor(regNumber);
-    const tokens = await tokensForOwner(ownerKey);
+    const now = Date.now();
+    const cached = tokensCache.get(ownerKey);
+    let tokens: any[];
+    if (cached && now < cached.expiresAt) {
+      tokens = cached.tokens;
+    } else {
+      tokens = await tokensForOwner(ownerKey);
+      if (tokensCache.size >= 5000) tokensCache.clear();
+      tokensCache.set(ownerKey, { tokens, expiresAt: now + TOKENS_CACHE_TTL_MS });
+    }
 
     return c.json({ success: true, tokens, legacy: [] });
   } catch (err: unknown) {

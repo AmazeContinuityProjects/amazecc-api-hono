@@ -5,6 +5,7 @@
  */
 import { app } from "./app";
 import { setWorkerEnv, type WorkerEnv } from "./env";
+import { handleQueueBatch, type SyncQueueMessage } from "./lib/syncQueue";
 
 export default {
   async fetch(
@@ -14,6 +15,14 @@ export default {
   ): Promise<Response> {
     setWorkerEnv(env);
     return app.fetch(request, env, ctx);
-  }
+  },
 
+  async queue(
+    batch: MessageBatch<SyncQueueMessage>,
+    env: WorkerEnv,
+    _ctx: ExecutionContext
+  ): Promise<void> {
+    setWorkerEnv(env);
+    await handleQueueBatch(batch, env);
+  },
 };

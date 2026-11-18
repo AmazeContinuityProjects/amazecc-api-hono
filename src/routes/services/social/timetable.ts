@@ -70,18 +70,27 @@ socialTimetableRouter.post("/timetable", async (c) => {
         { success: false, error: "not_a_participant", detail: { detail: "Caller is not a grant participant" } }, 403);
     }
 
-    // Resolve peer handle to owner_key
-    const peerRows = (await db.prepare(`SELECT p.owner_key, p.display_name FROM social_people p
-          WHERE p.handle = ? OR EXISTS (
-            SELECT 1 FROM social_handle_aliases a
-             WHERE a.handle = ? AND a.register_no = UPPER(TRIM(p.register_no))) LIMIT 1`)
-      .bind(body.handle.trim().toUpperCase(), body.handle.trim().toUpperCase())
-      .all<{ owner_key: string; display_name: string | null }>()).results;
-    if (!peerRows.length) {
+    // Resolve peer handle to owner_key using indexed lookups
+    const cleanHandle = body.handle.trim().toUpperCase();
+    let peer = await db.prepare(`SELECT p.owner_key, p.display_name FROM social_people p WHERE p.handle = ? LIMIT 1`)
+      .bind(cleanHandle)
+      .first<{ owner_key: string; display_name: string | null }>();
+
+    if (!peer) {
+      const alias = await db.prepare(`SELECT register_no FROM social_handle_aliases WHERE handle = ? LIMIT 1`)
+        .bind(cleanHandle).first<{ register_no: string }>();
+      if (alias) {
+        peer = await db.prepare(`SELECT p.owner_key, p.display_name FROM social_people p WHERE p.register_no = ? LIMIT 1`)
+          .bind(alias.register_no.trim().toUpperCase())
+          .first<{ owner_key: string; display_name: string | null }>();
+      }
+    }
+
+    if (!peer) {
       return c.json(
         { success: false, error: "handle_not_found", detail: { detail: "Handle not found" } }, 404);
     }
-    const peerKey = peerRows[0].owner_key;
+    const peerKey = peer.owner_key;
 
     const isPeerParticipant = grant.owner_a === peerKey || grant.owner_b === peerKey;
     if (!isPeerParticipant) {

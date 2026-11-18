@@ -151,15 +151,21 @@ export async function valueToken(mark: number): Promise<string> {
   return hashMark(mark);
 }
 
-/** Store the authenticated register number beside any existing keyed mark rows. */
-export async function setStudentRegisterNumberD1(ownerKey: string, regNo: string): Promise<void> {
+/** Build statement to store the authenticated register number beside existing keyed mark rows. */
+export function buildSetRegisterNumberStatement(ownerKey: string, regNo: string): D1PreparedStatement | null {
   const db = getWorkerEnv().APP_DB;
   if (!db) throw new Error("APP_DB is not configured");
   const normalized = regNo.trim().toUpperCase();
-  if (!normalized) return;
-  await db.prepare(`UPDATE class_user_marks SET reg_no = ?
-    WHERE user_key = ? AND (reg_no IS NULL OR reg_no = ?)`)
-    .bind(normalized, ownerKey, normalized).run();
+  if (!normalized) return null;
+  return db.prepare(`UPDATE class_user_marks SET reg_no = ?
+    WHERE user_key = ? AND (reg_no IS NULL OR reg_no <> ?)`)
+    .bind(normalized, ownerKey, normalized);
+}
+
+/** Store the authenticated register number beside any existing keyed mark rows. */
+export async function setStudentRegisterNumberD1(ownerKey: string, regNo: string): Promise<void> {
+  const stmt = buildSetRegisterNumberStatement(ownerKey, regNo);
+  if (stmt) await stmt.run();
 }
 
 /* ── schema ───────────────────────────────────────────────────────────────── */
@@ -285,22 +291,23 @@ export type ContributionResult = {
  * Exact Welford lines used (see addTo / removeFrom above).
  */
 /** Atomic, idempotent VTOP snapshot ingestion using a single D1 batch. */
-export async function recordObservedContributionD1(
+/** Build the D1PreparedStatements for a single marks contribution without executing immediately. */
+export async function buildContributionStatements(
   ownerKey: string,
   regNo: string,
   c: Contribution,
   now: number,
-): Promise<ContributionResult> {
+): Promise<D1PreparedStatement[]> {
   const db = getWorkerEnv().APP_DB;
   if (!db) throw new Error("APP_DB is not configured");
   if (!c.classId || typeof c.classId !== "string" || !Number.isFinite(c.mark)
       || c.mark < MARK_MIN || c.mark > MARK_MAX) {
-    return { outcome: "rejected", recountTriggered: false };
+    return [];
   }
   const isOverall = c.scope === "overall";
   const component = c.component?.trim().toLowerCase() ?? "";
   const title = c.title?.trim().replace(/\s+/g, " ") ?? "";
-  if (!isOverall && (!component || !title)) return { outcome: "rejected", recountTriggered: false };
+  if (!isOverall && (!component || !title)) return [];
   const assessmentKey = isOverall ? OVERALL_KEY : await genAssessmentKey(c.classId, component, title);
   const table = isOverall ? "class_overall_stats" : "class_assessment_stats";
   const keys = isOverall ? [c.classId] : [c.classId, assessmentKey];
@@ -335,12 +342,29 @@ export async function recordObservedContributionD1(
       m2 = ${table}.m2 + (? - ${table}.mean) * (? - (${table}.mean + (? - ${table}.mean) / (${table}.count + 1)))`)
     .bind(...(isOverall ? [c.classId, c.mark] : [c.classId, assessmentKey, c.mark]),
       c.mark, c.mark, c.mark, c.mark));
+  return statements;
+}
 
+export async function recordObservedContributionD1(
+  ownerKey: string,
+  regNo: string,
+  c: Contribution,
+  now: number,
+): Promise<ContributionResult> {
+  const db = getWorkerEnv().APP_DB;
+  if (!db) throw new Error("APP_DB is not configured");
+  const statements = await buildContributionStatements(ownerKey, regNo, c, now);
+  if (statements.length === 0) return { outcome: "rejected", recountTriggered: false };
+
+  const isOverall = c.scope === "overall";
   const results = await db.batch(statements);
   const deleteIndex = isOverall ? 0 : 1;
   const insertIndex = deleteIndex + 2;
   const deleted = Number(results[deleteIndex]?.meta.changes ?? 0) > 0;
   const inserted = Number(results[insertIndex]?.meta.changes ?? 0) > 0;
+  if (deleted || inserted) {
+    invalidateClassStatsCache(c.classId);
+  }
   return {
     outcome: deleted ? "recounted" : inserted ? "added" : "skipped",
     recountTriggered: deleted,
@@ -370,6 +394,7 @@ export async function recountAssessment(
       ON CONFLICT (${scope === "overall" ? "class_id" : "class_id, assessment_key"})
       DO UPDATE SET count = 0, mean = 0, m2 = 0`).bind(...keys),
   ]);
+  invalidateClassStatsCache(classId);
   return { zeroed: Number(results[0]?.meta.changes ?? 0) };
 }
 
@@ -383,6 +408,15 @@ export type AssessmentStats = {
   title?: string;
 };
 
+// In-memory cache for cohort curve statistics (24-hour TTL; invalidated when queue writes new marks for a class)
+const CLASS_STATS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const classStatsCache = new Map<string, { stats: ClassStats; expiresAt: number }>();
+
+export function invalidateClassStatsCache(classId?: string): void {
+  if (classId) classStatsCache.delete(classId);
+  else classStatsCache.clear();
+}
+
 export type ClassStats = {
   count: number;
   mean: number;
@@ -392,24 +426,41 @@ export type ClassStats = {
 
 export async function statsForClasses(classIds: string[]): Promise<Record<string, ClassStats>> {
   if (classIds.length === 0) return {};
+  const unique = Array.from(new Set(classIds));
+  const out: Record<string, ClassStats> = {};
+  const toFetch: string[] = [];
+  const now = Date.now();
+
+  for (const id of unique) {
+    const cached = classStatsCache.get(id);
+    if (cached && now < cached.expiresAt) {
+      out[id] = cached.stats;
+    } else {
+      toFetch.push(id);
+    }
+  }
+
+  if (toFetch.length === 0) return out;
+
   await ensureSchema();
   const db = await requireMarksDb();
-  const unique = Array.from(new Set(classIds));
-  const placeholders = unique.map(() => "?").join(", ");
+  const placeholders = toFetch.map(() => "?").join(", ");
   const [overall, assessments] = await Promise.all([
     db.prepare(`SELECT class_id, count, mean, m2 FROM class_overall_stats
-      WHERE class_id IN (${placeholders})`).bind(...unique).all<Record<string, unknown>>(),
+      WHERE class_id IN (${placeholders})`).bind(...toFetch).all<Record<string, unknown>>(),
     db.prepare(`SELECT stats.class_id, stats.assessment_key, stats.count, stats.mean, stats.m2,
           metadata.component, metadata.title FROM class_assessment_stats AS stats
         LEFT JOIN class_assessment_metadata AS metadata USING (class_id, assessment_key)
-        WHERE stats.class_id IN (${placeholders})`).bind(...unique).all<Record<string, unknown>>(),
+        WHERE stats.class_id IN (${placeholders})`).bind(...toFetch).all<Record<string, unknown>>(),
   ]);
-  const out: Record<string, ClassStats> = {};
-  for (const id of unique) out[id] = { count: 0, mean: 0, sd: 0, assessments: {} };
+
+  for (const id of toFetch) out[id] = { count: 0, mean: 0, sd: 0, assessments: {} };
   for (const row of overall.results) {
     const acc = toAcc(row);
     const id = row.class_id as string;
-    out[id] = { count: acc.count, mean: acc.mean, sd: standardDeviation(acc), assessments: out[id].assessments };
+    if (out[id]) {
+      out[id] = { count: acc.count, mean: acc.mean, sd: standardDeviation(acc), assessments: out[id].assessments };
+    }
   }
   for (const row of assessments.results) {
     const entry = out[row.class_id as string];
@@ -423,6 +474,12 @@ export async function statsForClasses(classIds: string[]): Promise<Record<string
       ...(typeof row.title === "string" ? { title: row.title } : {}),
     };
   }
+
+  for (const id of toFetch) {
+    if (classStatsCache.size > 2000) classStatsCache.clear();
+    classStatsCache.set(id, { stats: out[id], expiresAt: now + CLASS_STATS_CACHE_TTL_MS });
+  }
+
   return out;
 }
 

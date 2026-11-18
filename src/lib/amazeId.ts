@@ -90,6 +90,28 @@ function hasActiveLinkedSession(row: OAuthAccessTokenRow): boolean {
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
 
+// In-memory cache for validated sessions within the Worker isolate (60s TTL)
+const sessionCache = new Map<string, { identity: AmazeIdIdentity; expiresAt: number }>();
+
+function getCachedIdentity(token: string): AmazeIdIdentity | null {
+  const cached = sessionCache.get(token);
+  if (!cached) return null;
+  if (Date.now() > cached.expiresAt) {
+    sessionCache.delete(token);
+    return null;
+  }
+  return cached.identity;
+}
+
+function setCachedIdentity(token: string, identity: AmazeIdIdentity, ttlMs = 60_000): void {
+  if (sessionCache.size > 2000) sessionCache.clear();
+  sessionCache.set(token, { identity, expiresAt: Date.now() + ttlMs });
+}
+
+export function clearSessionCache(): void {
+  sessionCache.clear();
+}
+
 /** Look up the session join user row for a raw token. Returns null on any failure (fail closed). */
 export async function lookupSession(token: string): Promise<SessionRow | null> {
   const db = getWorkerEnv().AUTH_DB;
@@ -204,7 +226,7 @@ async function reserveDpopProof(
   try {
     if (now.getTime() - lastDpopReplayCleanupAt >= 60_000) {
       await db
-        .prepare(`DELETE FROM "verification" WHERE id LIKE 'dpop-proof:%' AND expiresAt <= ?1`)
+        .prepare(`DELETE FROM "verification" WHERE id >= 'dpop-proof:' AND id < 'dpop-proof;' AND expiresAt <= ?1`)
         .bind(now.toISOString())
         .run();
       lastDpopReplayCleanupAt = now.getTime();
@@ -383,8 +405,12 @@ async function verifyAmazeSessionOnce(req: Request): Promise<AmazeIdIdentity | n
   }
 
   if (authorization.scheme !== "bearer") return null;
+  const cached = getCachedIdentity(authorization.token);
+  if (cached) return cached;
   const session = await lookupSession(authorization.token);
-  return session ? toIdentity(session) : null;
+  const identity = session ? toIdentity(session) : null;
+  if (identity) setCachedIdentity(authorization.token, identity);
+  return identity;
 }
 
 /** True for any admin-capable Amaze ID (admin with ≥0 sections, or superadmin). */

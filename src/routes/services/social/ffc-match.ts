@@ -8,15 +8,20 @@
  * session fields are required only to refresh a new semester enrollment.
  */
 import { Hono } from "hono";
+import { getWorkerEnv } from "../../../../src/env";
 import { publicErrorMessage } from "../../../../src/lib/publicError";
 import {
   identifyCaller,
   generateHandle,
   getSocialHandlesForRegister,
   regKey,
+  FFCS_CLASSES_TABLE,
+  FFCS_CLASS_REGISTRATIONS_TABLE,
 } from "../../../../src/lib/social";
 import {
+  type FfcsClassRow,
   type FfcsRegistrationRow,
+  type FfcsMatchRow,
   ensureFfcsSemesterInD1,
   migrateD1FfcsOwnerKey,
   migrateD1SocialOwnerKey,
@@ -188,12 +193,16 @@ async function syncRegisteredClasses(caller: MatchCaller, semesterId: string): P
 }
 
 async function enrolledClassIds(caller: MatchCaller, semesterId: string): Promise<string[]> {
-  const identifiers = [...new Set([caller.regNo, caller.authorizedID].filter(Boolean).map((value) => value!.toUpperCase()))];
+  const identifiers = [...new Set([caller.regNo, caller.authorizedID].filter(Boolean).map((value) => value!.trim().toUpperCase()))];
+  if (!identifiers.length) return [];
   await ensureFfcsSemesterInD1(semesterId);
-  const registrations = await readD1Registrations(semesterId);
-  return [...new Set(registrations
-    .filter((row) => identifiers.includes(row.register_no.toUpperCase()))
-    .map((row) => String(row.class_id).toUpperCase()))].sort();
+  const db = getWorkerEnv().APP_DB;
+  if (!db) return [];
+  const placeholders = identifiers.map(() => "?").join(", ");
+  const { results } = await db.prepare(`SELECT DISTINCT class_id FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
+    WHERE semester_id = ? AND register_no IN (${placeholders})`)
+    .bind(semesterId, ...identifiers).all<{ class_id: string }>();
+  return results.map((row) => String(row.class_id).toUpperCase()).sort();
 }
 
 /** Build the response shape consumed by the Friend Finder client. */
@@ -209,8 +218,20 @@ async function buildMatchState(caller: MatchCaller, semesterId: string) {
     ? entries.filter((row) => row.owner_key !== caller.ownerKey && row.discoverable
       && row.class_ids.some((classId) => meSet.has(classId)))
     : [];
-  const offerings = new Map((await readD1Classes(semesterId))
-    .filter((row) => meSet.has(row.class_id)).map((row) => [row.class_id, row]));
+
+  const db = getWorkerEnv().APP_DB;
+  let offerings = new Map<string, FfcsClassRow>();
+  if (db && classIds.length > 0) {
+    const placeholders = classIds.map(() => "?").join(", ");
+    const { results } = await db.prepare(`SELECT * FROM ${FFCS_CLASSES_TABLE}
+      WHERE semester_id = ? AND class_id IN (${placeholders})`)
+      .bind(semesterId, ...classIds)
+      .all<Omit<FfcsClassRow, "register_nos"> & { register_nos: string }>();
+    offerings = new Map(results.map((row) => [row.class_id, {
+      ...row,
+      register_nos: JSON.parse(row.register_nos || "[]") as string[],
+    }]));
+  }
   const peopleByClass = new Map<string, any[]>(classIds.map((classId) => [classId, []]));
   const overlaps: any[] = [];
   for (const candidate of candidates) {
@@ -293,12 +314,46 @@ socialFfcsMatchRouter.get("/ffcs-match", async (c) => {
     }
 
     await ensureFfcsSemesterInD1(semesterId);
-    const requestedIds = classIdsParam ? new Set(classIdsParam.split(",").filter(Boolean)) : null;
-    const [classes, registrations, entries] = await Promise.all([
-      readD1Classes(semesterId),
-      readD1Registrations(semesterId),
-      readD1Matches(semesterId),
-    ]);
+    const requestedIds = classIdsParam
+      ? [...new Set(classIdsParam.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean))]
+      : null;
+    const db = getWorkerEnv().APP_DB;
+
+    let classes: FfcsClassRow[];
+    let registrations: FfcsRegistrationRow[];
+    let entries: FfcsMatchRow[];
+
+    if (db && requestedIds && requestedIds.length > 0) {
+      const placeholders = requestedIds.map(() => "?").join(", ");
+      const [classesRes, regRes, matchRes] = await Promise.all([
+        db.prepare(`SELECT * FROM ${FFCS_CLASSES_TABLE}
+          WHERE semester_id = ? AND class_id IN (${placeholders})
+          ORDER BY course_code, class_id`)
+          .bind(semesterId, ...requestedIds)
+          .all<Omit<FfcsClassRow, "register_nos"> & { register_nos: string }>(),
+        db.prepare(`SELECT * FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
+          WHERE semester_id = ? AND class_id IN (${placeholders})
+          ORDER BY class_id, register_no`)
+          .bind(semesterId, ...requestedIds)
+          .all<Omit<FfcsRegistrationRow, "discoverable"> & { discoverable: number }>(),
+        readD1Matches(semesterId),
+      ]);
+      classes = classesRes.results.map((row) => ({
+        ...row,
+        register_nos: JSON.parse(row.register_nos || "[]") as string[],
+      }));
+      registrations = regRes.results.map((row) => ({
+        ...row,
+        discoverable: Boolean(row.discoverable),
+      }));
+      entries = matchRes;
+    } else {
+      [classes, registrations, entries] = await Promise.all([
+        readD1Classes(semesterId),
+        readD1Registrations(semesterId),
+        readD1Matches(semesterId),
+      ]);
+    }
     const discoverableOwners = new Set(entries.filter((entry) => entry.discoverable).map((entry) => entry.owner_key));
     const registrationsByClass = new Map<string, FfcsRegistrationRow[]>();
     for (const registration of registrations) {
@@ -307,8 +362,9 @@ socialFfcsMatchRouter.get("/ffcs-match", async (c) => {
       current.push(registration);
       registrationsByClass.set(registration.class_id, current);
     }
+    const requestedSet = requestedIds ? new Set(requestedIds) : null;
     const resultClasses = classes
-      .filter((row) => !requestedIds || requestedIds.has(row.class_id))
+      .filter((row) => !requestedSet || requestedSet.has(row.class_id))
       .map((row) => ({
         classId: row.class_id,
         courseCode: row.course_code || "",

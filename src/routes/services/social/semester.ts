@@ -18,6 +18,7 @@ socialSemesterRouter.get("/semester", async (c) => {
       return c.json(
         { success: false, error: "no_current_semester", detail: { detail: "No derivation has run yet" } }, 404);
     }
+    c.header("Cache-Control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
     return c.json({
       success: true,
       semesterId: value.semesterId || null,

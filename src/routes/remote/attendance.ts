@@ -20,18 +20,21 @@ import {
 } from "../../lib/vtop";
 import fetchTimetable from "../../lib/fetchTimeTable";
 import { attendanceItem, courseItem } from "../../types/data/attendance";
-import { upsertStudentProfile } from "../../lib/student-profiles";
 import { getMarks } from "../../lib/marks.htmlparser2";
-import { generateHandle } from "../../lib/social";
-import { ensureFfcsSemesterInD1, upsertD1RegisteredClasses } from "../../lib/socialD1";
 import type { CourseItem } from "../../types/data/marks";
 import {
-  ensureSchema,
   ownerKeyFor,
-  recordObservedContributionD1,
-  setStudentRegisterNumberD1,
   type Contribution,
 } from "../../lib/marksStats";
+import {
+  computeMarksFingerprint,
+  shouldSkipMarksIngestion,
+  recordMarksIngested,
+  computeClassesFingerprint,
+  shouldSkipClassesSync,
+  recordClassesSynced,
+} from "../../lib/ingestionCache";
+import { enqueueSyncJob } from "../../lib/syncQueue";
 
 export const attendanceRoute = new Hono();
 
@@ -228,18 +231,29 @@ async function ingestAttendanceMarks(
   const contributions = buildMarkContributions(marksResult.courses);
   if (contributions.length === 0) return marksResult;
 
+  const regNo = authorizedID.trim().toUpperCase();
+  const fingerprint = computeMarksFingerprint(contributions);
+
+  // If marks are unchanged from our cached observation today, skip D1 ingestion completely
+  if (await shouldSkipMarksIngestion(regNo, semesterId, fingerprint)) {
+    return marksResult;
+  }
+
   try {
-    const regNo = authorizedID.trim().toUpperCase();
     const ownerKey = await ownerKeyFor(regNo);
-    await ensureSchema();
-    const now = Date.now();
-    await setStudentRegisterNumberD1(ownerKey, regNo);
-    for (const contribution of contributions) {
-      await recordObservedContributionD1(ownerKey, regNo, contribution, now);
-    }
+    await enqueueSyncJob({
+      type: "INGEST_MARKS",
+      regNo,
+      semesterId,
+      contributions,
+      fingerprint,
+      ownerKey,
+      timestamp: Date.now(),
+    });
+    await recordMarksIngested(regNo, semesterId, fingerprint);
   } catch (err) {
     console.error(
-      "[attendance] marks ingestion failed:",
+      "[attendance] marks ingestion/queue failed:",
       err instanceof Error ? err.message : String(err),
     );
   }
@@ -297,29 +311,35 @@ attendanceRoute.post("/attendance", async (c) => {
     // Enroll the authenticated VTOP register number directly into APP_DB FFCS data.
     try {
       const regNo = String(authorizedID).trim().toUpperCase();
-      const ownerKey = await ownerKeyFor(regNo);
       const semester = String(semesterId ?? "").trim().toUpperCase();
       if (!semester) throw new Error("semesterId is required for FFCS enrollment");
 
-      await upsertStudentProfile(regNo, { semester_id: semester });
-      await ensureFfcsSemesterInD1(semester);
-      await upsertD1RegisteredClasses({
-        semesterId: semester,
-        ownerKey,
-        registerNo: regNo,
-        displayName: "",
-        handle: generateHandle(regNo),
-        courses: courseInfo.filter((course) => course.classId).map((course) => ({
-          classId: course.classId,
-          courseCode: course.courseCode.trim(),
-          courseTitle: course.course,
-          courseType: course.category || "",
-          slot: course.slotVenue || "",
-          faculty: course.facultyDetails || "",
-          credits: course.LTPJC?.split(" ")[4] || "",
-          room: course.slotVenue || "",
-        })),
-      });
+      const coursesWithClassId = courseInfo.filter((course) => course.classId);
+      const classesFingerprint = computeClassesFingerprint(coursesWithClassId);
+
+      // If courses for this student and semester haven't changed today, skip redundant D1 reads/writes
+      if (!(await shouldSkipClassesSync(regNo, semester, classesFingerprint))) {
+        const ownerKey = await ownerKeyFor(regNo);
+        await enqueueSyncJob({
+          type: "SYNC_CLASSES",
+          regNo,
+          semesterId: semester,
+          fingerprint: classesFingerprint,
+          ownerKey,
+          courses: coursesWithClassId.map((course) => ({
+            classId: course.classId,
+            courseCode: course.courseCode.trim(),
+            courseTitle: course.course,
+            courseType: course.category || "",
+            slot: course.slotVenue || "",
+            faculty: course.facultyDetails || "",
+            credits: course.LTPJC?.split(" ")[4] || "",
+            room: course.slotVenue || "",
+          })),
+          timestamp: Date.now(),
+        });
+        await recordClassesSynced(regNo, semester, classesFingerprint);
+      }
     } catch (err) {
       console.error("[attendance] FFCS enrollment failed:", err);
       // Keep the attendance response available if the optional enrollment write fails.

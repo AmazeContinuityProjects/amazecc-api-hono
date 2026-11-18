@@ -16,6 +16,10 @@ import { checkRateLimit, rateLimitResponse, getClientIp } from "../../lib/rateLi
 
 export const facultyRoute = new Hono();
 
+const FACULTY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const facultyRosterCache = new Map<string, { faculties: RosterFaculty[]; expiresAt: number }>();
+let schoolsCache: { schools: any[]; expiresAt: number } | null = null;
+
 interface RosterFaculty {
   id: string;
   name: string;
@@ -203,8 +207,15 @@ facultyRoute.post("/faculty/scrape", async (c) => {
 
   try {
     const { schoolId } = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!schoolId) {
+    if (!schoolId || typeof schoolId !== "string") {
       return c.json({ success: false, error: "schoolId is required" }, 400);
+    }
+
+    const now = Date.now();
+    const cachedRoster = facultyRosterCache.get(schoolId);
+    if (cachedRoster && now < cachedRoster.expiresAt) {
+      c.header("Cache-Control", "public, max-age=3600, s-maxage=21600");
+      return c.json({ success: true, faculties: cachedRoster.faculties });
     }
 
     const db = getAppDataDb();
@@ -246,6 +257,11 @@ facultyRoute.post("/faculty/scrape", async (c) => {
       }
     }
 
+    if (faculties.length > 0) {
+      if (facultyRosterCache.size >= 500) facultyRosterCache.clear();
+      facultyRosterCache.set(schoolId, { faculties, expiresAt: now + FACULTY_CACHE_TTL_MS });
+    }
+    c.header("Cache-Control", "public, max-age=3600, s-maxage=21600");
     return c.json({ success: true, faculties });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -256,10 +272,18 @@ facultyRoute.post("/faculty/scrape", async (c) => {
 
 facultyRoute.get("/faculty/schools", async (c) => {
   try {
+    const now = Date.now();
+    if (schoolsCache && now < schoolsCache.expiresAt) {
+      c.header("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400");
+      return c.json({ success: true, schools: schoolsCache.schools });
+    }
+
     const db = getAppDataDb();
     const { rows } = await db.query(
       `SELECT id, school_name FROM faculty_directory_urls ORDER BY school_name ASC`
     );
+    schoolsCache = { schools: rows, expiresAt: now + FACULTY_CACHE_TTL_MS };
+    c.header("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400");
     return c.json({ success: true, schools: rows });
   } catch (error: unknown) {
     console.error("faculty/schools error:", error instanceof Error ? error.message : error);

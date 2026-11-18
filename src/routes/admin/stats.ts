@@ -4,11 +4,19 @@ import { ensureAuditLogsTable } from "../../lib/audit";
 import { ensureQbankInD1 } from "../../lib/qbankD1";
 import { ensureTransportInD1 } from "../../lib/transportD1";
 
+const ADMIN_STATS_TTL_MS = 30_000;
+let cachedAdminStats: { data: unknown; expiresAt: number } | null = null;
+
 export async function GET(req: Request) {
   const auth = await requireSection("dashboard")(req);
   if (auth instanceof Response) return auth;
 
   try {
+    const now = Date.now();
+    if (cachedAdminStats && now < cachedAdminStats.expiresAt) {
+      return Response.json({ success: true, data: cachedAdminStats.data });
+    }
+
     const db = getAppDataDb();
     await Promise.all([ensureQbankInD1(), ensureTransportInD1(), ensureAuditLogsTable()]);
 
@@ -33,31 +41,34 @@ export async function GET(req: Request) {
           LIMIT 100`),
       ]);
 
+    const responseData = {
+      activeUsers: Number(usersResult.rows[0]?.count || 0),
+      papers: {
+        total: Number(papersResult.rows[0]?.total || 0),
+        approved: Number(papersResult.rows[0]?.approved || 0),
+        pending: Number(papersResult.rows[0]?.pending || 0),
+        pendingReview: Number(papersResult.rows[0]?.pending_review || 0),
+        failedOcr: Number(papersResult.rows[0]?.failed_ocr || 0),
+      },
+      busRoutes: Number(busesResult.rows[0]?.count || 0),
+      transportRoutes: Number(transportRoutesResult.rows[0]?.count || 0),
+      transportRules: Number(rulesResult.rows[0]?.count || 0),
+      vitolSubscribers: Number(subsResult.rows[0]?.count || 0),
+      recentLogs: auditLogsResult.rows.map((row) => ({
+        id: row.id,
+        admin_user: row.admin_user,
+        action: row.action,
+        target_resource: row.target_resource,
+        timestamp: row.timestamp,
+        details: row.details,
+        ip_address: row.ip_address,
+      })),
+    };
+
+    cachedAdminStats = { data: responseData, expiresAt: now + ADMIN_STATS_TTL_MS };
     return Response.json({
       success: true,
-      data: {
-        activeUsers: Number(usersResult.rows[0]?.count || 0),
-        papers: {
-          total: Number(papersResult.rows[0]?.total || 0),
-          approved: Number(papersResult.rows[0]?.approved || 0),
-          pending: Number(papersResult.rows[0]?.pending || 0),
-          pendingReview: Number(papersResult.rows[0]?.pending_review || 0),
-          failedOcr: Number(papersResult.rows[0]?.failed_ocr || 0),
-        },
-        busRoutes: Number(busesResult.rows[0]?.count || 0),
-        transportRoutes: Number(transportRoutesResult.rows[0]?.count || 0),
-        transportRules: Number(rulesResult.rows[0]?.count || 0),
-        vitolSubscribers: Number(subsResult.rows[0]?.count || 0),
-        recentLogs: auditLogsResult.rows.map((row) => ({
-          id: row.id,
-          admin_user: row.admin_user,
-          action: row.action,
-          target_resource: row.target_resource,
-          timestamp: row.timestamp,
-          details: row.details,
-          ip_address: row.ip_address,
-        })),
-      },
+      data: responseData,
     });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });

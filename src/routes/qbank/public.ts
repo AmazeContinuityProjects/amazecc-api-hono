@@ -1,13 +1,17 @@
 import { verifyAmazeSession, adminUnauthorized } from "../../lib/amazeId";
 import { decodeQbankQuestions, ensureQbankInD1, nextQbankId } from "../../lib/qbankD1";
 
+const PUBLIC_CACHE_HEADER = {
+  "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+};
+
 /** Public courses that have at least one approved paper. */
 export async function courses() {
   try {
     const db = await ensureQbankInD1();
     const { results } = await db.prepare(`SELECT DISTINCT course_code AS code, title
         FROM papers_archive WHERE approval_status = 'APPROVED' ORDER BY course_code`).all();
-    return Response.json({ success: true, data: results });
+    return Response.json({ success: true, data: results }, { headers: PUBLIC_CACHE_HEADER });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
@@ -25,7 +29,7 @@ export async function papers(req: Request) {
     const { results } = await db.prepare(`SELECT * FROM papers_archive
         WHERE course_code = ? AND approval_status = 'APPROVED' ORDER BY created_at DESC`)
         .bind(courseCode).all();
-    return Response.json({ success: true, data: results });
+    return Response.json({ success: true, data: results }, { headers: PUBLIC_CACHE_HEADER });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
@@ -44,7 +48,7 @@ export async function questions(req: Request) {
         FROM qbank_questions q JOIN papers_archive p ON q.source_id = p.source_id
         WHERE p.course_code = ? AND p.approval_status = 'APPROVED' ORDER BY q.question_number`)
         .bind(courseCode).all();
-    return Response.json({ success: true, data: decodeQbankQuestions(results as Array<Record<string, unknown>>) });
+    return Response.json({ success: true, data: decodeQbankQuestions(results as Array<Record<string, unknown>>) }, { headers: PUBLIC_CACHE_HEADER });
   } catch {
     return Response.json({ success: false, error: "Internal server error" }, { status: 500 });
   }

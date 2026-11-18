@@ -314,16 +314,43 @@ export async function upsertD1RegisteredClasses(input: {
 }): Promise<void> {
   const db = getWorkerEnv().APP_DB;
   if (!db) return;
-  const existingClasses = await readD1Classes(input.semesterId);
-  const classesById = new Map(existingClasses.map((row) => [row.class_id, row]));
-  const identifiers = [...new Set([input.registerNo, input.authorizedID].filter(Boolean).map((value) => value!.toUpperCase()))];
+  const identifiers = [...new Set([input.registerNo, input.authorizedID].filter(Boolean).map((value) => value!.trim().toUpperCase()))];
+  if (!identifiers.length) return;
+
+  // 1. Find only the student's previously registered class_ids for this semester via indexed lookup
+  const placeholders = identifiers.map(() => "?").join(", ");
+  const prevRegs = (await db.prepare(`SELECT class_id FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
+    WHERE semester_id = ? AND register_no IN (${placeholders})`)
+    .bind(input.semesterId, ...identifiers).all<{ class_id: string }>()).results;
+  const previousClassIds = new Set(prevRegs.map((r) => r.class_id));
+  const currentCourseIds = new Set(input.courses.map((course) => course.classId));
+
+  // Classes the student dropped
+  const droppedClassIds = [...previousClassIds].filter((id) => !currentCourseIds.has(id));
+
+  // Fetch only the relevant classes (dropped ones + current ones), avoiding full-semester table scan
+  const classIdsToFetch = [...new Set([...droppedClassIds, ...input.courses.map((c) => c.classId)])];
+  let classesById = new Map<string, FfcsClassRow>();
+  if (classIdsToFetch.length > 0) {
+    const fetchPlaceholders = classIdsToFetch.map(() => "?").join(", ");
+    const { results } = await db.prepare(`SELECT * FROM ${FFCS_CLASSES_TABLE}
+      WHERE semester_id = ? AND class_id IN (${fetchPlaceholders})`)
+      .bind(input.semesterId, ...classIdsToFetch)
+      .all<Omit<FfcsClassRow, "register_nos"> & { register_nos: string }>();
+    classesById = new Map(results.map((row) => [row.class_id, {
+      ...row,
+      register_nos: JSON.parse(row.register_nos || "[]") as string[],
+    }]));
+  }
+
   const deleteRegistration = db.prepare(`DELETE FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
-    WHERE semester_id = ? AND UPPER(register_no) IN (${identifiers.map(() => "?").join(", ")})`)
+    WHERE semester_id = ? AND register_no IN (${placeholders})`)
     .bind(input.semesterId, ...identifiers);
   const statements: D1PreparedStatement[] = [deleteRegistration];
-  const currentCourseIds = new Set(input.courses.map((course) => course.classId));
-  for (const oldClass of existingClasses) {
-    if (currentCourseIds.has(oldClass.class_id)) continue;
+
+  for (const droppedId of droppedClassIds) {
+    const oldClass = classesById.get(droppedId);
+    if (!oldClass) continue;
     const registerNos = oldClass.register_nos.filter((value) => !identifiers.includes(value.toUpperCase()));
     if (registerNos.length !== oldClass.register_nos.length) {
       statements.push(db.prepare(`UPDATE ${FFCS_CLASSES_TABLE}
@@ -332,9 +359,10 @@ export async function upsertD1RegisteredClasses(input: {
         .bind(JSON.stringify(registerNos), input.semesterId, oldClass.class_id));
     }
   }
+
   for (const course of input.courses) {
     const oldRegisters = classesById.get(course.classId)?.register_nos ?? [];
-    const registerNos = [...new Set([...oldRegisters.filter((value) => !identifiers.includes(value.toUpperCase())), input.registerNo])];
+    const registerNos = [...new Set([...oldRegisters.filter((value) => !identifiers.includes(value.toUpperCase())), input.registerNo.trim().toUpperCase()])];
     statements.push(db.prepare(`INSERT INTO ${FFCS_CLASSES_TABLE}
       (semester_id, class_id, course_code, course_title, course_type, slot, faculty, credits, room, register_nos)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -352,7 +380,7 @@ export async function upsertD1RegisteredClasses(input: {
       ON CONFLICT (semester_id, class_id, register_no) DO UPDATE SET
         display_name = excluded.display_name, handle = excluded.handle,
         owner_key = excluded.owner_key, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`)
-      .bind(input.semesterId, course.classId, input.registerNo, input.displayName,
+      .bind(input.semesterId, course.classId, input.registerNo.trim().toUpperCase(), input.displayName,
         input.handle, input.ownerKey));
   }
   for (let index = 0; index < statements.length; index += D1_BATCH_SIZE) {
@@ -380,17 +408,29 @@ export async function removeD1Match(input: {
 }): Promise<void> {
   const db = getWorkerEnv().APP_DB;
   if (!db) return;
-  const currentClasses = await readD1Classes(input.semesterId);
+  const normalizedReg = input.registerNo.trim().toUpperCase();
+  const prevRegs = (await db.prepare(`SELECT class_id FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
+    WHERE semester_id = ? AND register_no = ?`).bind(input.semesterId, normalizedReg)
+    .all<{ class_id: string }>()).results;
+  const classIds = prevRegs.map((r) => r.class_id);
+
   const statements: D1PreparedStatement[] = [
     db.prepare(`DELETE FROM ${FFCS_MATCH_TABLE} WHERE owner_key = ? AND semester_id = ?`)
       .bind(input.ownerKey, input.semesterId),
     db.prepare(`DELETE FROM ${FFCS_CLASS_REGISTRATIONS_TABLE}
-      WHERE semester_id = ? AND UPPER(register_no) = ?`)
-      .bind(input.semesterId, input.registerNo.toUpperCase()),
+      WHERE semester_id = ? AND register_no = ?`)
+      .bind(input.semesterId, normalizedReg),
   ];
-  for (const row of currentClasses) {
-    const remaining = row.register_nos.filter((value) => value.toUpperCase() !== input.registerNo.toUpperCase());
-    if (remaining.length !== row.register_nos.length) {
+
+  if (classIds.length > 0) {
+    const placeholders = classIds.map(() => "?").join(", ");
+    const { results } = await db.prepare(`SELECT * FROM ${FFCS_CLASSES_TABLE}
+      WHERE semester_id = ? AND class_id IN (${placeholders})`)
+      .bind(input.semesterId, ...classIds)
+      .all<Omit<FfcsClassRow, "register_nos"> & { register_nos: string }>();
+    for (const row of results) {
+      const remaining = (JSON.parse(row.register_nos || "[]") as string[])
+        .filter((value) => value.toUpperCase() !== normalizedReg);
       statements.push(db.prepare(`UPDATE ${FFCS_CLASSES_TABLE}
         SET register_nos = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE semester_id = ? AND class_id = ?`)

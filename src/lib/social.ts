@@ -173,7 +173,7 @@ export async function getSocialHandlesForRegister(regNo: string): Promise<string
     db.prepare(`SELECT handle FROM ${SOCIAL_HANDLE_ALIASES_TABLE}
       WHERE register_no = ? ORDER BY created_at ASC, handle ASC`)
       .bind(normalized).all<{ handle: string }>(),
-    db.prepare(`SELECT handle FROM social_people WHERE UPPER(register_no) = ? ORDER BY created_at ASC, handle ASC`)
+    db.prepare(`SELECT handle FROM social_people WHERE register_no = ? ORDER BY created_at ASC, handle ASC`)
       .bind(normalized).all<{ handle: string }>(),
   ]);
   const handles = new Set([...aliases.results, ...people.results].map((row) => row.handle).filter(Boolean));

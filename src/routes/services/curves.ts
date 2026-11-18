@@ -41,6 +41,9 @@ import { getStudentProfileByRegNo } from "../../lib/student-profiles";
 
 export const curvesRouter = new Hono();
 
+const ROSTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const classRosterCache = new Map<string, { roster: Array<{ reg_no: string; display_name: string | null }>; expiresAt: number }>();
+
 function fail(status: number, error: string, extra?: Record<string, unknown>) {
   return Response.json({ success: false, error, ...extra }, { status });
 }
@@ -145,13 +148,15 @@ curvesRouter.post("/curves", async (c) => {
       const db = getWorkerEnv().APP_DB;
       if (!db) throw new Error("APP_DB is not configured");
       if (semester) await ensureFfcsSemesterInD1(semester);
-      const registrations = semester
-        ? await readD1Registrations(semester)
-        : (await db.prepare(`SELECT class_id, register_no FROM ffcs_class_registrations`)
-            .all<{ class_id: string; register_no: string }>()).results;
-      const allowed = [...new Set(registrations
-        .filter((row) => row.register_no.toUpperCase() === regNo && requested.includes(row.class_id))
-        .map((row) => row.class_id))];
+
+      // Query only the requested classes for this student using indexed lookup
+      const placeholders = requested.map(() => "?").join(", ");
+      const query = semester
+        ? `SELECT class_id FROM ffcs_class_registrations WHERE semester_id = ? AND register_no = ? AND class_id IN (${placeholders})`
+        : `SELECT class_id FROM ffcs_class_registrations WHERE register_no = ? AND class_id IN (${placeholders})`;
+      const params = semester ? [semester, regNo, ...requested] : [regNo, ...requested];
+      const { results } = await db.prepare(query).bind(...params).all<{ class_id: string }>();
+      const allowed = [...new Set(results.map((row) => row.class_id))];
       const stats = await statsForClasses(allowed);
       return c.json({ success: true, stats }, { status: 200 });
     }
@@ -162,13 +167,17 @@ curvesRouter.post("/curves", async (c) => {
     }
 
     // ── Verify enrollment: caller must be registered for this class ──
-    const semester = semesterId || "";
+    const semester = semesterId?.trim() || "";
     const db = getWorkerEnv().APP_DB;
     if (!db) throw new Error("APP_DB is not configured");
-    await ensureFfcsSemesterInD1(semester);
-    const registrations = await readD1Registrations(semester);
-    const enrolled = registrations.some((row) => row.class_id === classId && row.register_no.toUpperCase() === regNo);
-    if (!enrolled) {
+    if (semester) await ensureFfcsSemesterInD1(semester);
+
+    const enrollmentQuery = semester
+      ? `SELECT 1 FROM ffcs_class_registrations WHERE semester_id = ? AND class_id = ? AND register_no = ? LIMIT 1`
+      : `SELECT 1 FROM ffcs_class_registrations WHERE class_id = ? AND register_no = ? LIMIT 1`;
+    const enrollmentParams = semester ? [semester, classId, regNo] : [classId, regNo];
+    const enrolledRow = await db.prepare(enrollmentQuery).bind(...enrollmentParams).first();
+    if (!enrolledRow) {
       return fail(403, "not_enrolled", {
         detail: "You are not enrolled in this class for the given semester",
       });
@@ -188,15 +197,36 @@ curvesRouter.post("/curves", async (c) => {
       stats = { count: cohort.count, mean: cohort.mean, sd: cohort.sd };
     }
 
-    // ── Classmates: every other student in the same class ──
-    let classmates: Array<{ reg_no: string; display_name: string | null }>;
-    const classmatesRegistrations = await readD1Registrations(semester);
-    classmates = await Promise.all(classmatesRegistrations
-      .filter((row) => row.class_id === classId && row.register_no.toUpperCase() !== regNo)
-      .map(async (row) => ({
-        reg_no: row.register_no,
-        display_name: (await getStudentProfileByRegNo(row.register_no))?.display_name || row.display_name || null,
-      })));
+    // ── Classmates: every other student in the same class (joined with profiles in 1 query) ──
+    const rosterKey = `${semester}::${classId}`;
+    const now = Date.now();
+    let allClassmates: Array<{ reg_no: string; display_name: string | null }>;
+
+    const cachedRoster = classRosterCache.get(rosterKey);
+    if (cachedRoster && now < cachedRoster.expiresAt) {
+      allClassmates = cachedRoster.roster;
+    } else {
+      const classmatesQuery = semester
+        ? `SELECT r.register_no, COALESCE(p.display_name, r.display_name, '') as display_name
+           FROM ffcs_class_registrations r
+           LEFT JOIN student_profiles p ON p.reg_no = r.register_no
+           WHERE r.semester_id = ? AND r.class_id = ?`
+        : `SELECT r.register_no, COALESCE(p.display_name, r.display_name, '') as display_name
+           FROM ffcs_class_registrations r
+           LEFT JOIN student_profiles p ON p.reg_no = r.register_no
+           WHERE r.class_id = ?`;
+      const classmatesParams = semester ? [semester, classId] : [classId];
+      const { results: classmateRows } = await db.prepare(classmatesQuery).bind(...classmatesParams)
+        .all<{ register_no: string; display_name: string | null }>();
+      allClassmates = classmateRows.map((r) => ({
+        reg_no: r.register_no,
+        display_name: r.display_name || null,
+      }));
+      if (classRosterCache.size >= 5000) classRosterCache.clear();
+      classRosterCache.set(rosterKey, { roster: allClassmates, expiresAt: now + ROSTER_CACHE_TTL_MS });
+    }
+
+    const classmates = allClassmates.filter((c) => c.reg_no !== regNo);
     classmates.sort((a, b) => (a.display_name || "").localeCompare(b.display_name || "") || a.reg_no.localeCompare(b.reg_no));
 
     return c.json(

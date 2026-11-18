@@ -15,6 +15,7 @@ cabshareHubsRouter.get("/hubs", async (c) => {
     const appDb = getWorkerEnv().APP_DB;
     if (!appDb) throw new Error("APP_DB is not configured");
     const rows = (await appDb.prepare(`SELECT * FROM ${CABSHARE_HUBS_TABLE} ORDER BY hub_id ASC`).all()).results;
+    c.header("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400");
     return c.json({ success: true, hubs: rows }, 200);
   } catch (err: unknown) {
     console.error("[cabshare] hubs error:", err);

@@ -8,8 +8,17 @@ import { getWorkerEnv } from "../../../../src/env";
 
 export const cabshareStatsRouter = new Hono();
 
+const CABSHARE_STATS_TTL_MS = 60_000;
+let cachedStats: { data: unknown; expiresAt: number } | null = null;
+
 cabshareStatsRouter.get("/stats", async (c) => {
   try {
+    const now = Date.now();
+    if (cachedStats && now < cachedStats.expiresAt) {
+      c.header("Cache-Control", "public, max-age=60, s-maxage=300");
+      return c.json(cachedStats.data, 200);
+    }
+
     const appDb = getWorkerEnv().APP_DB;
     if (!appDb) throw new Error("APP_DB is not configured");
     let totalTrips;
@@ -25,7 +34,7 @@ cabshareStatsRouter.get("/stats", async (c) => {
         GROUP BY h.hub_id, h.hub_name ORDER BY trip_count DESC LIMIT 3`).all<any>()).results;
     }
 
-    return c.json({
+    const responseData = {
       success: true,
       stats: {
         totalTrips: Number(totalTrips[0].total),
@@ -36,7 +45,11 @@ cabshareStatsRouter.get("/stats", async (c) => {
           trip_count: Number(r.trip_count),
         })),
       },
-    }, 200);
+    };
+
+    cachedStats = { data: responseData, expiresAt: now + CABSHARE_STATS_TTL_MS };
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300");
+    return c.json(responseData, 200);
   } catch (err: unknown) {
     console.error("[cabshare] stats error:", err);
     return c.json(

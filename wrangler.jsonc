@@ -52,6 +52,23 @@
       "database_id": "8c4535b4-da9a-416e-8151-0d09db6ff9c6"
     }
   ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "SYNC_QUEUE",
+        "queue": "amazecc-sync"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "amazecc-sync",
+        "max_batch_size": 100,
+        "max_batch_timeout": 50,
+        "max_retries": 3,
+        "dead_letter_queue": "amazecc-sync-dlq"
+      }
+    ]
+  },
   "observability": {
     "enabled": true
   }

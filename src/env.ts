@@ -11,6 +11,8 @@
 export interface WorkerEnv {
   /** Dedicated service-data D1 database. AUTH_DB remains isolated for Better Auth. */
   APP_DB?: D1Database;
+  /** Cloudflare Queue for asynchronous background ingestion and syncing. */
+  SYNC_QUEUE?: Queue<any>;
   /**
    * Native Cloudflare R2 bucket for QBank papers (papers/<id>.pdf). Preferred
    * storage backend; falls back to B2_* S3-compatible credentials when unset.
